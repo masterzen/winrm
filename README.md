@@ -47,8 +47,7 @@ make
 
 This will generate a binary in the base directory called `./winrm`.
 
-_Note_: this winrm code depends on [Gokogiri](https://github.com/moovweb/gokogiri) which itself requires
-the building platform to have `libxml2` development headers installed. The running platform must also have `libxml2` installed (this by default on MacOSX and some Linux distributions)
+_Note_: this winrm code doesn't depend anymore on [Gokogiri](https://github.com/moovweb/gokogiri) which means it is now in pure Go.
 
 _Note_: you need go 1.1+. Please check your installation with
 

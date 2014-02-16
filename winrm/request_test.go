@@ -1,9 +1,11 @@
 package winrm
 
 import (
+	"github.com/masterzen/simplexml/dom"
 	"github.com/masterzen/winrm/soap"
-	"github.com/moovweb/gokogiri/xml"
+	"github.com/masterzen/xmlpath"
 	. "launchpad.net/gocheck"
+	"strings"
 	"testing"
 )
 
@@ -74,28 +76,22 @@ func (s *WinRMSuite) TestSignalRequest(c *C) {
 	assertXPath(c, request.Doc(), "//rsp:Signal[@CommandId=\"COMMANDID\"]/rsp:Code", "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/signal/terminate")
 }
 
-func assertXPath(c *C, node *xml.XmlDocument, request string, expected string) {
-	soap.NS_WIN_SHELL.RegisterNamespace(node.DocXPathCtx())
-	soap.NS_ADDRESSING.RegisterNamespace(node.DocXPathCtx())
-	soap.NS_WSMAN_DMTF.RegisterNamespace(node.DocXPathCtx())
-	soap.NS_WSMAN_MSFT.RegisterNamespace(node.DocXPathCtx())
-	soap.NS_SOAP_ENV.RegisterNamespace(node.DocXPathCtx())
+func assertXPath(c *C, node *dom.Document, request string, expected string) {
+	content := strings.NewReader(node.String())
 
-	e, err := node.EvalXPath(request, nil)
+	path, err := xmlpath.CompileWithNamespace(request, soap.GetAllNamespaces())
 	if err != nil {
 		c.Fatalf("Xpath %s gives error %s", request, err)
 	}
-	switch e.(type) {
-	default:
-		c.Fatalf("Xpath %s returned unknown result %s", request, e)
-	case string:
-		c.Assert(e.(string), Equals, expected)
-	case *xml.Node:
-		c.Assert(e.(xml.Node).Content(), Equals, expected)
-	case []xml.Node:
-		//c.Logf("xpath returned: %s from %s into %s", e, request, node.String())
-		e2 := e.([]xml.Node)
-		c.Assert(e2[0].Content(), Equals, expected)
+	var root *xmlpath.Node
+	root, err = xmlpath.Parse(content)
+	if err != nil {
+		c.Fatalf("Xpath %s gives error %s", request, err)
 	}
 
+	var e string
+	var ok bool
+	e, ok = path.String(root)
+	c.Assert(ok, Equals, true)
+	c.Assert(e, Equals, expected)
 }

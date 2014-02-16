@@ -1,7 +1,7 @@
 package soap
 
 import (
-	"github.com/moovweb/gokogiri/xml"
+	"github.com/masterzen/simplexml/dom"
 	. "launchpad.net/gocheck"
 	"testing"
 )
@@ -14,9 +14,10 @@ type MySuite struct{}
 var _ = Suite(&MySuite{})
 
 func initDocument() (h *SoapHeader) {
-	doc := xml.CreateEmptyDocument(xml.DefaultEncodingBytes, xml.DefaultEncodingBytes)
-	e := doc.CreateElementNode("Envelope")
-	doc.AddChild(e)
+	doc := dom.CreateDocument()
+	doc.PrettyPrint = true
+	e := dom.CreateElement("Envelope")
+	doc.SetRoot(e)
 	AddUsualNamespaces(e)
 	NS_SOAP_ENV.SetTo(e)
 	h = &SoapHeader{message: &SoapMessage{document: doc, envelope: e}}
@@ -27,7 +28,7 @@ func (s *MySuite) TestHeaderBuild(c *C) {
 	h := initDocument()
 	msg := h.To("http://winrm:5985/wsman").ReplyTo("http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous").MaxEnvelopeSize(153600).Id("1-2-3-4").Locale("en_US").Timeout("PT60S").Build()
 
-	expected := `<?xml version="1.0" encoding="utf-8"?>
+	expected := `<?xml version="1.0" encoding="utf-8" ?>
 <env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope" xmlns:a="http://schemas.xmlsoap.org/ws/2004/08/addressing" xmlns:rsp="http://schemas.microsoft.com/wbem/wsman/1/windows/shell" xmlns:w="http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd" xmlns:p="http://schemas.microsoft.com/wbem/wsman/1/wsman.xsd">
   <env:Header>
     <a:To>http://winrm:5985/wsman</a:To>

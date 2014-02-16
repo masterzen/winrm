@@ -1,32 +1,32 @@
 package soap
 
 import (
-	"github.com/moovweb/gokogiri/xml"
+	"github.com/masterzen/simplexml/dom"
 )
 
 type SoapMessage struct {
-	document *xml.XmlDocument
-	envelope *xml.ElementNode
+	document *dom.Document
+	envelope *dom.Element
 	header   *SoapHeader
-	body     *xml.ElementNode
+	body     *dom.Element
 }
 
 type MessageBuilder interface {
-	SetBody(xml.Node)
-	NewBody() *xml.ElementNode
-	CreateElement(xml.Node, string, Namespace) *xml.ElementNode
-	CreateBodyElement(string, Namespace) *xml.ElementNode
+	SetBody(*dom.Element)
+	NewBody() *dom.Element
+	CreateElement(*dom.Element, string, dom.Namespace) *dom.Element
+	CreateBodyElement(string, dom.Namespace) *dom.Element
 	Header() *SoapHeader
-	Doc() *xml.Document
+	Doc() *dom.Document
 	Free()
 
 	String() string
 }
 
 func NewMessage() (message *SoapMessage) {
-	doc := xml.CreateEmptyDocument(xml.DefaultEncodingBytes, xml.DefaultEncodingBytes)
-	e := doc.CreateElementNode("Envelope")
-	doc.AddChild(e)
+	doc := dom.CreateDocument()
+	e := dom.CreateElement("Envelope")
+	doc.SetRoot(e)
 	AddUsualNamespaces(e)
 	NS_SOAP_ENV.SetTo(e)
 
@@ -34,8 +34,8 @@ func NewMessage() (message *SoapMessage) {
 	return
 }
 
-func (message *SoapMessage) NewBody() (body *xml.ElementNode) {
-	body = message.document.CreateElementNode("Body")
+func (message *SoapMessage) NewBody() (body *dom.Element) {
+	body = dom.CreateElement("Body")
 	message.envelope.AddChild(body)
 	NS_SOAP_ENV.SetTo(body)
 	return
@@ -45,22 +45,21 @@ func (message *SoapMessage) String() string {
 	return message.document.String()
 }
 
-func (message *SoapMessage) Doc() *xml.XmlDocument {
+func (message *SoapMessage) Doc() *dom.Document {
 	return message.document
 }
 
 func (message *SoapMessage) Free() {
-	message.document.Free()
 }
 
-func (message *SoapMessage) CreateElement(parent xml.Node, name string, ns Namespace) (element *xml.ElementNode) {
-	element = message.document.CreateElementNode(name)
+func (message *SoapMessage) CreateElement(parent *dom.Element, name string, ns dom.Namespace) (element *dom.Element) {
+	element = dom.CreateElement(name)
 	parent.AddChild(element)
 	ns.SetTo(element)
 	return
 }
 
-func (message *SoapMessage) CreateBodyElement(name string, ns Namespace) (element *xml.ElementNode) {
+func (message *SoapMessage) CreateBodyElement(name string, ns dom.Namespace) (element *dom.Element) {
 	if message.body == nil {
 		message.body = message.NewBody()
 	}

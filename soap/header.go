@@ -1,7 +1,7 @@
 package soap
 
 import (
-	"github.com/moovweb/gokogiri/xml"
+	"github.com/masterzen/simplexml/dom"
 	"strconv"
 )
 
@@ -163,14 +163,14 @@ func (self *SoapHeader) Build() *SoapMessage {
 	return self.message
 }
 
-func (self *SoapHeader) createElement(parent xml.Node, name string, ns Namespace) (element *xml.ElementNode) {
-	element = self.message.document.CreateElementNode(name)
+func (self *SoapHeader) createElement(parent *dom.Element, name string, ns dom.Namespace) (element *dom.Element) {
+	element = dom.CreateElement(name)
 	parent.AddChild(element)
 	ns.SetTo(element)
 	return
 }
 
-func (self *SoapHeader) createMUElement(parent xml.Node, name string, ns Namespace, mustUnderstand bool) (element *xml.ElementNode) {
+func (self *SoapHeader) createMUElement(parent *dom.Element, name string, ns dom.Namespace, mustUnderstand bool) (element *dom.Element) {
 	element = self.createElement(parent, name, ns)
 	value := "false"
 	if mustUnderstand {

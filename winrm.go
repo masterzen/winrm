@@ -28,7 +28,7 @@ func main() {
 	var pass = flag.String("password", "", "winrm admin username")
 
 	flag.Parse()
-	
+
 	client := winrm.NewClient(*hostname, *user, *pass)
 	client.RunWithInput(flag.Arg(0), os.Stdout, os.Stderr, os.Stdin)
 }

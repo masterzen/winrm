@@ -1,9 +1,9 @@
 package winrm
 
 import (
+	"bytes"
 	"github.com/masterzen/winrm/soap"
 	"io"
-	"bytes"
 )
 
 type Client struct {
@@ -74,7 +74,7 @@ func (client *Client) Run(command string, stdout io.Writer, stderr io.Writer) (e
 	return nil
 }
 
-// Run will run command on the the remote host, returning the process stdout and stderr 
+// Run will run command on the the remote host, returning the process stdout and stderr
 // as strings, and using the input stdin string as the process input
 func (client *Client) RunWithString(command string, stdin string) (stdout string, stderr string, err error) {
 	shell, err := client.CreateShell()
@@ -97,11 +97,10 @@ func (client *Client) RunWithString(command string, stdin string) (stdout string
 	return outWriter.String(), errWriter.String(), nil
 }
 
-
 // Run will run command on the the remote host, writing the process stdout and stderr to
 // the given writers, and injecting the process stdin with the stdin reader.
 // Warning stdin (not stdout/stderr) are bufferized, which means reading only one byte in stdin will
-// send a winrm http packet to the remote host. If stdin is a pipe, it might be better for 
+// send a winrm http packet to the remote host. If stdin is a pipe, it might be better for
 // performance reasons to buffer it.
 func (client *Client) RunWithInput(command string, stdout io.Writer, stderr io.Writer, stdin io.Reader) (err error) {
 	shell, err := client.CreateShell()

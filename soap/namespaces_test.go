@@ -1,13 +1,14 @@
 package soap
 
 import (
-	"github.com/moovweb/gokogiri/xml"
+	"github.com/masterzen/simplexml/dom"
 	"testing"
 )
 
 func TestAddUsualNamespaces(t *testing.T) {
-	doc := xml.CreateEmptyDocument(xml.DefaultEncodingBytes, xml.DefaultEncodingBytes)
-	root := doc.CreateElementNode("root")
+	doc := dom.CreateDocument()
+	root := dom.CreateElement("root")
+	doc.SetRoot(root)
 	AddUsualNamespaces(root)
 
 	for ns := range root.DeclaredNamespaces() {
@@ -25,8 +26,9 @@ func TestAddUsualNamespaces(t *testing.T) {
 }
 
 func TestSetTo(t *testing.T) {
-	doc := xml.CreateEmptyDocument(xml.DefaultEncodingBytes, xml.DefaultEncodingBytes)
-	root := doc.CreateElementNode("root")
+	doc := dom.CreateDocument()
+	root := dom.CreateElement("root")
+	doc.SetRoot(root)
 	NS_SOAP_ENV.SetTo(root)
 
 	if root.String() != `<env:root xmlns:env="http://www.w3.org/2003/05/soap-envelope"/>` {
