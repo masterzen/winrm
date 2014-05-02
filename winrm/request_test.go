@@ -22,7 +22,7 @@ func (s *WinRMSuite) TestOpenShellRequest(c *C) {
 
 	assertXPath(c, openShell.Doc(), "//a:Action", "http://schemas.xmlsoap.org/ws/2004/09/transfer/Create")
 	assertXPath(c, openShell.Doc(), "//a:To", "http://localhost")
-	assertXPath(c, openShell.Doc(), "//env:Body/rsp:Shell/rsp:InputStream", "stdin")
+	assertXPath(c, openShell.Doc(), "//env:Body/rsp:Shell/rsp:InputStreams", "stdin")
 	assertXPath(c, openShell.Doc(), "//env:Body/rsp:Shell/rsp:OutputStreams", "stdout stderr")
 }
 

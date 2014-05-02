@@ -26,7 +26,7 @@ func NewOpenShellRequest(uri string, params *Parameters) (message *soap.SoapMess
 	defaultHeaders(message, params).Action("http://schemas.xmlsoap.org/ws/2004/09/transfer/Create").ResourceURI("http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd").AddOption(soap.NewHeaderOption("WINRS_NOPROFILE", "FALSE")).AddOption(soap.NewHeaderOption("WINRS_CODEPAGE", "437")).Build()
 
 	body := message.CreateBodyElement("Shell", soap.NS_WIN_SHELL)
-	input := message.CreateElement(body, "InputStream", soap.NS_WIN_SHELL)
+	input := message.CreateElement(body, "InputStreams", soap.NS_WIN_SHELL)
 	input.SetContent("stdin")
 	output := message.CreateElement(body, "OutputStreams", soap.NS_WIN_SHELL)
 	output.SetContent("stdout stderr")
