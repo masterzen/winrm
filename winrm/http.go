@@ -47,25 +47,11 @@ func Http_post(client *Client, request *soap.SoapMessage) (response string, err 
 		return
 	}
 
-	if resp.StatusCode != 200 {
-		if resp.StatusCode == 500 {
-			// check for timeout
-			var content string
-			content, err = body(resp)
-			if strings.Contains(content, "TimedOut") {
-				response = content
-				return
-			} else {
-				body, err := ioutil.ReadAll(resp.Body)
-				err = fmt.Errorf("unknown http error: %d - (%v) %s", resp.StatusCode, err, body)
-			}
-		} else {
-			// unknown error
-			body, err := ioutil.ReadAll(resp.Body)
-			err = fmt.Errorf("unknown http error: %d - (%v) %s", resp.StatusCode, err, body)
-		}
-	} else {
+	if resp.StatusCode == 200 {
 		response, err = body(resp)
+	} else {
+		body, _ := ioutil.ReadAll(resp.Body)
+		err = fmt.Errorf("http error: %d - %s", resp.StatusCode, body)
 	}
 
 	return
