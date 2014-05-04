@@ -2,6 +2,7 @@ package winrm
 
 import (
 	"bytes"
+	"fmt"
 	"github.com/masterzen/winrm/soap"
 	"io"
 )
@@ -18,7 +19,7 @@ type Client struct {
 // This function doesn't connect (connection happens only when CreateShell is called)
 func NewClient(hostname string, user string, password string) (client *Client) {
 	params := DefaultParameters()
-	params.url = winRMUrl(hostname)
+	params.url = winRMUrl(hostname, params.Port)
 	client = &Client{Parameters: *params, username: user, password: password, http: Http_post}
 	return
 }
@@ -26,13 +27,13 @@ func NewClient(hostname string, user string, password string) (client *Client) {
 // NewClient will create a new remote client on url, connecting with user and password
 // This function doesn't connect (connection happens only when CreateShell is called)
 func NewClientWithParameters(hostname string, user string, password string, params *Parameters) (client *Client) {
-	params.url = winRMUrl(hostname)
+	params.url = winRMUrl(hostname, params.Port)
 	client = &Client{Parameters: *params, username: user, password: password, http: Http_post}
 	return
 }
 
-func winRMUrl(hostname string) string {
-	return "http://" + hostname + ":5985/wsman"
+func winRMUrl(hostname string, port int) string {
+	return fmt.Sprintf("http://%s:%d/wsman", hostname, port)
 }
 
 // CreateShell will create a WinRM Shell, which is the prealable for running

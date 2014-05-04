@@ -9,6 +9,7 @@ func (s *WinRMSuite) TestDefaultParameters(c *C) {
 	c.Assert(params.Locale, Equals, "en-US")
 	c.Assert(params.Timeout, Equals, "PT60S")
 	c.Assert(params.EnvelopeSize, Equals, 153600)
+	c.Assert(params.Port, Equals, 5985)
 }
 
 func (s *WinRMSuite) TestParameters(c *C) {
@@ -16,4 +17,5 @@ func (s *WinRMSuite) TestParameters(c *C) {
 	c.Assert(params.Locale, Equals, "fr-FR")
 	c.Assert(params.Timeout, Equals, "PT120S")
 	c.Assert(params.EnvelopeSize, Equals, 128)
+	c.Assert(params.Port, Equals, 5985)
 }
