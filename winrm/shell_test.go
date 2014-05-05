@@ -6,7 +6,7 @@ import (
 )
 
 func (s *WinRMSuite) TestShellExecuteResponse(c *C) {
-	client := NewClient("localhost", "Administrator", "v3r1S3cre7")
+	client := NewClient("localhost", 5985, "Administrator", "v3r1S3cre7")
 	shell := &Shell{client: client, ShellId: "67A74734-DD32-4F10-89DE-49A060483810"}
 	first := true
 	client.http = func(client *Client, message *soap.SoapMessage) (string, error) {
@@ -25,7 +25,7 @@ func (s *WinRMSuite) TestShellExecuteResponse(c *C) {
 }
 
 func (s *WinRMSuite) TestShellCloseResponse(c *C) {
-	client := NewClient("localhost", "Administrator", "v3r1S3cre7")
+	client := NewClient("localhost", 5985, "Administrator", "v3r1S3cre7")
 	shell := &Shell{client: client, ShellId: "67A74734-DD32-4F10-89DE-49A060483810"}
 	client.http = func(client *Client, message *soap.SoapMessage) (string, error) {
 		c.Assert(message.String(), Contains, "http://schemas.xmlsoap.org/ws/2004/09/transfer/Delete")

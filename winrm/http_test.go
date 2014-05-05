@@ -52,7 +52,7 @@ func (s *WinRMSuite) TestHttpRequest(c *C) {
 	ts.Start()
 	defer ts.Close()
 
-	client := NewClient("localhost", "test", "test")
+	client := NewClient("localhost", 5985, "test", "test")
 	shell, err := client.CreateShell()
 	if err != nil {
 		c.Fatalf("Can't create shell %s", err)

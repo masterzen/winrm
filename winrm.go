@@ -26,9 +26,10 @@ func main() {
 	var hostname = flag.String("hostname", "localhost", "winrm host")
 	var user = flag.String("username", "", "winrm admin username")
 	var pass = flag.String("password", "", "winrm admin username")
+	var port = flag.Int("port", 5985, "winrm port")
 
 	flag.Parse()
 
-	client := winrm.NewClient(*hostname, *user, *pass)
+	client := winrm.NewClient(*hostname, *port, *user, *pass)
 	client.RunWithInput(flag.Arg(0), os.Stdout, os.Stderr, os.Stdin)
 }

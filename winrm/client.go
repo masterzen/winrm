@@ -12,23 +12,28 @@ type Client struct {
 	username string
 	password string
 	useHTTPS bool
+	url      string
 	http     HttpPost
 }
 
 // NewClient will create a new remote client on url, connecting with user and password
 // This function doesn't connect (connection happens only when CreateShell is called)
-func NewClient(hostname string, user string, password string) (client *Client) {
+func NewClient(hostname string, port int, user, password string) (client *Client) {
 	params := DefaultParameters()
-	params.url = winRMUrl(hostname, params.Port)
-	client = &Client{Parameters: *params, username: user, password: password, http: Http_post}
+	client = NewClientWithParameters(hostname, port, user, password, params)
 	return
 }
 
 // NewClient will create a new remote client on url, connecting with user and password
 // This function doesn't connect (connection happens only when CreateShell is called)
-func NewClientWithParameters(hostname string, user string, password string, params *Parameters) (client *Client) {
-	params.url = winRMUrl(hostname, params.Port)
-	client = &Client{Parameters: *params, username: user, password: password, http: Http_post}
+func NewClientWithParameters(hostname string, port int, user, password string, params *Parameters) (client *Client) {
+	client = &Client{
+		Parameters: *params,
+		username:   user,
+		password:   password,
+		url:        winRMUrl(hostname, port),
+		http:       Http_post,
+	}
 	return
 }
 
@@ -39,7 +44,7 @@ func winRMUrl(hostname string, port int) string {
 // CreateShell will create a WinRM Shell, which is the prealable for running
 // commands.
 func (client *Client) CreateShell() (shell *Shell, err error) {
-	request := NewOpenShellRequest(client.Parameters.url, &client.Parameters)
+	request := NewOpenShellRequest(client.url, &client.Parameters)
 	defer request.Free()
 
 	response, err := client.sendRequest(request)

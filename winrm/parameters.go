@@ -1,11 +1,9 @@
 package winrm
 
 type Parameters struct {
-	url          string
 	Timeout      string
 	Locale       string
 	EnvelopeSize int
-	Port         int
 }
 
 func DefaultParameters() *Parameters {
@@ -13,5 +11,5 @@ func DefaultParameters() *Parameters {
 }
 
 func NewParameters(timeout string, locale string, envelopeSize int) *Parameters {
-	return &Parameters{Timeout: timeout, Locale: locale, EnvelopeSize: envelopeSize, Port: 5985}
+	return &Parameters{Timeout: timeout, Locale: locale, EnvelopeSize: envelopeSize}
 }
