@@ -30,6 +30,6 @@ func main() {
 
 	flag.Parse()
 
-	client := winrm.NewClient(*hostname, *port, *user, *pass)
+	client := winrm.NewClient(&winrm.Endpoint{*hostname, *port}, *user, *pass)
 	client.RunWithInput(flag.Arg(0), os.Stdout, os.Stderr, os.Stdin)
 }
