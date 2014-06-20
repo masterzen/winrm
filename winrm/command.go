@@ -84,7 +84,7 @@ func (command *Command) Close() (err error) {
 		return err
 	}
 
-	request := NewSignalRequest(command.client.Parameters.url, command.shell.ShellId, command.commandId, &command.client.Parameters)
+	request := NewSignalRequest(command.client.url, command.shell.ShellId, command.commandId, &command.client.Parameters)
 	defer request.Free()
 
 	_, err = command.client.sendRequest(request)
@@ -99,7 +99,7 @@ func (command *Command) slurpAllOutput() (finished bool, err error) {
 		return true, err
 	}
 
-	request := NewGetOutputRequest(command.client.Parameters.url, command.shell.ShellId, command.commandId, "stdout stderr", &command.client.Parameters)
+	request := NewGetOutputRequest(command.client.url, command.shell.ShellId, command.commandId, "stdout stderr", &command.client.Parameters)
 	defer request.Free()
 
 	response, err := command.client.sendRequest(request)
@@ -132,7 +132,7 @@ func (command *Command) sendInput(data []byte) (err error) {
 		return err
 	}
 
-	request := NewSendInputRequest(command.client.Parameters.url, command.shell.ShellId, command.commandId, data, &command.client.Parameters)
+	request := NewSendInputRequest(command.client.url, command.shell.ShellId, command.commandId, data, &command.client.Parameters)
 	defer request.Free()
 
 	_, err = command.client.sendRequest(request)

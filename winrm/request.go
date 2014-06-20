@@ -11,9 +11,9 @@ func genUUID() string {
 	return "uuid:" + uuid.String()
 }
 
-func defaultHeaders(message *soap.SoapMessage, params *Parameters) (h *soap.SoapHeader) {
+func defaultHeaders(uri string, message *soap.SoapMessage, params *Parameters) (h *soap.SoapHeader) {
 	h = message.Header()
-	h.To(params.url).ReplyTo("http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous").MaxEnvelopeSize(params.EnvelopeSize).Id(genUUID()).Locale(params.Locale).Timeout(params.Timeout)
+	h.To(uri).ReplyTo("http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous").MaxEnvelopeSize(params.EnvelopeSize).Id(genUUID()).Locale(params.Locale).Timeout(params.Timeout)
 	return
 }
 
@@ -21,9 +21,8 @@ func NewOpenShellRequest(uri string, params *Parameters) (message *soap.SoapMess
 	if params == nil {
 		params = DefaultParameters()
 	}
-	params.url = uri
 	message = soap.NewMessage()
-	defaultHeaders(message, params).Action("http://schemas.xmlsoap.org/ws/2004/09/transfer/Create").ResourceURI("http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd").AddOption(soap.NewHeaderOption("WINRS_NOPROFILE", "FALSE")).AddOption(soap.NewHeaderOption("WINRS_CODEPAGE", "437")).Build()
+	defaultHeaders(uri, message, params).Action("http://schemas.xmlsoap.org/ws/2004/09/transfer/Create").ResourceURI("http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd").AddOption(soap.NewHeaderOption("WINRS_NOPROFILE", "FALSE")).AddOption(soap.NewHeaderOption("WINRS_CODEPAGE", "437")).Build()
 
 	body := message.CreateBodyElement("Shell", soap.NS_WIN_SHELL)
 	input := message.CreateElement(body, "InputStreams", soap.NS_WIN_SHELL)
@@ -37,9 +36,8 @@ func NewDeleteShellRequest(uri string, shellId string, params *Parameters) (mess
 	if params == nil {
 		params = DefaultParameters()
 	}
-	params.url = uri
 	message = soap.NewMessage()
-	defaultHeaders(message, params).Action("http://schemas.xmlsoap.org/ws/2004/09/transfer/Delete").ShellId(shellId).ResourceURI("http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd").Build()
+	defaultHeaders(uri, message, params).Action("http://schemas.xmlsoap.org/ws/2004/09/transfer/Delete").ShellId(shellId).ResourceURI("http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd").Build()
 
 	return
 }
@@ -48,9 +46,8 @@ func NewExecuteCommandRequest(uri string, shellId string, command string, params
 	if params == nil {
 		params = DefaultParameters()
 	}
-	params.url = uri
 	message = soap.NewMessage()
-	defaultHeaders(message, params).Action("http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Command").ResourceURI("http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd").ShellId(shellId).AddOption(soap.NewHeaderOption("WINRS_CONSOLEMODE_STDIN", "FALSE")).Build()
+	defaultHeaders(uri, message, params).Action("http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Command").ResourceURI("http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd").ShellId(shellId).AddOption(soap.NewHeaderOption("WINRS_CONSOLEMODE_STDIN", "FALSE")).Build()
 
 	body := message.CreateBodyElement("CommandLine", soap.NS_WIN_SHELL)
 	commandElement := message.CreateElement(body, "Command", soap.NS_WIN_SHELL)
@@ -62,9 +59,8 @@ func NewGetOutputRequest(uri string, shellId string, commandId string, streams s
 	if params == nil {
 		params = DefaultParameters()
 	}
-	params.url = uri
 	message = soap.NewMessage()
-	defaultHeaders(message, params).Action("http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Receive").ResourceURI("http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd").ShellId(shellId).Build()
+	defaultHeaders(uri, message, params).Action("http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Receive").ResourceURI("http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd").ShellId(shellId).Build()
 
 	receive := message.CreateBodyElement("Receive", soap.NS_WIN_SHELL)
 	desiredStreams := message.CreateElement(receive, "DesiredStream", soap.NS_WIN_SHELL)
@@ -77,10 +73,8 @@ func NewSendInputRequest(uri string, shellId string, commandId string, input []b
 	if params == nil {
 		params = DefaultParameters()
 	}
-	params.url = uri
 	message = soap.NewMessage()
-
-	defaultHeaders(message, params).Action("http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Send").ResourceURI("http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd").ShellId(shellId).Build()
+	defaultHeaders(uri, message, params).Action("http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Send").ResourceURI("http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd").ShellId(shellId).Build()
 
 	content := base64.StdEncoding.EncodeToString(input)
 
@@ -96,10 +90,9 @@ func NewSignalRequest(uri string, shellId string, commandId string, params *Para
 	if params == nil {
 		params = DefaultParameters()
 	}
-	params.url = uri
 	message = soap.NewMessage()
 
-	defaultHeaders(message, params).Action("http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Command").ResourceURI("http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd").ShellId(shellId).Build()
+	defaultHeaders(uri, message, params).Action("http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Command").ResourceURI("http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd").ShellId(shellId).Build()
 
 	signal := message.CreateBodyElement("Signal", soap.NS_WIN_SHELL)
 	signal.SetAttr("CommandId", commandId)

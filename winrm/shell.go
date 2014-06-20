@@ -8,7 +8,7 @@ type Shell struct {
 
 // Execute command on the given Shell, returning either an error or a Command
 func (shell *Shell) Execute(command string) (cmd *Command, err error) {
-	request := NewExecuteCommandRequest(shell.client.Parameters.url, shell.ShellId, command, &shell.client.Parameters)
+	request := NewExecuteCommandRequest(shell.client.url, shell.ShellId, command, &shell.client.Parameters)
 	defer request.Free()
 
 	response, err := shell.client.sendRequest(request)
@@ -23,7 +23,7 @@ func (shell *Shell) Execute(command string) (cmd *Command, err error) {
 
 // Close will terminate this shell. No commands can be issued once the shell is closed.
 func (shell *Shell) Close() (err error) {
-	request := NewDeleteShellRequest(shell.client.Parameters.url, shell.ShellId, &shell.client.Parameters)
+	request := NewDeleteShellRequest(shell.client.url, shell.ShellId, &shell.client.Parameters)
 	defer request.Free()
 
 	_, err = shell.client.sendRequest(request)

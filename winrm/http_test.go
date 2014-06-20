@@ -1,10 +1,10 @@
 package winrm
 
 import (
-	. "launchpad.net/gocheck"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	. "launchpad.net/gocheck"
 )
 
 var response = `<s:Envelope xml:lang="en-US" xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:a="http://schemas.xmlsoap.org/ws/2004/08/addressing" xmlns:x="http://schemas.xmlsoap.org/ws/2004/09/transfer" xmlns:w="http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd" xmlns:rsp="http://schemas.microsoft.com/wbem/wsman/1/windows/shell" xmlns:p="http://schemas.microsoft.com/wbem/wsman/1/wsman.xsd">
@@ -52,7 +52,7 @@ func (s *WinRMSuite) TestHttpRequest(c *C) {
 	ts.Start()
 	defer ts.Close()
 
-	client := NewClient("localhost", "test", "test")
+	client := NewClient(&Endpoint{"localhost", 5985}, "test", "test")
 	shell, err := client.CreateShell()
 	if err != nil {
 		c.Fatalf("Can't create shell %s", err)

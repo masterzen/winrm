@@ -29,15 +29,17 @@ func main() {
 		user string
 		pass string
 		cmd string
+		port int
 	)
 
 	flag.StringVar(&hostname, "hostname", "localhost", "winrm host")
 	flag.StringVar(&user, "username", "vagrant", "winrm admin username")
 	flag.StringVar(&pass, "password", "vagrant", "winrm admin password")
+	flag.IntVar(&port, "port", 5985, "winrm port")
 	flag.Parse()
 
 	cmd = flag.Arg(0)
-	client := winrm.NewClient(hostname, user, pass)
+	client := winrm.NewClient(&winrm.Endpoint{hostname, port}, user, pass)
 	err := client.RunWithInput(cmd, os.Stdout, os.Stderr, os.Stdin)
 
 	if err != nil {
