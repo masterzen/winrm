@@ -20,15 +20,29 @@ import (
 	"flag"
 	"github.com/masterzen/winrm/winrm"
 	"os"
+	"fmt"
 )
 
 func main() {
-	var hostname = flag.String("hostname", "localhost", "winrm host")
-	var user = flag.String("username", "", "winrm admin username")
-	var pass = flag.String("password", "", "winrm admin username")
+	var (
+		hostname string
+		user string
+		pass string
+		cmd string
+		port int
+	)
 
+	flag.StringVar(&hostname, "hostname", "localhost", "winrm host")
+	flag.StringVar(&user, "username", "vagrant", "winrm admin username")
+	flag.StringVar(&pass, "password", "vagrant", "winrm admin password")
+	flag.IntVar(&port, "port", 5985, "winrm port")
 	flag.Parse()
 
-	client := winrm.NewClient(*hostname, *user, *pass)
-	client.RunWithInput(flag.Arg(0), os.Stdout, os.Stderr, os.Stdin)
+	cmd = flag.Arg(0)
+	client := winrm.NewClient(&winrm.Endpoint{hostname, port}, user, pass)
+	err := client.RunWithInput(cmd, os.Stdout, os.Stderr, os.Stdin)
+
+	if err != nil {
+		fmt.Println(err)
+	}
 }

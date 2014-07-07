@@ -46,7 +46,7 @@ func xpath(node *xmlpath.Node, xpath string) (nodes []xmlpath.Node, err error) {
 func ParseOpenShellResponse(response string) (shellId string, err error) {
 	doc, err := xmlpath.Parse(strings.NewReader(response))
 
-	shellId, err = first(doc, "//rsp:ShellId")
+	shellId, err = first(doc, "//w:Selector[@Name='ShellId']")
 	return
 }
 
