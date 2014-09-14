@@ -103,20 +103,20 @@ func (client *Client) RunWithString(command string, stdin string) (stdout string
 // Warning stdin (not stdout/stderr) are bufferized, which means reading only one byte in stdin will
 // send a winrm http packet to the remote host. If stdin is a pipe, it might be better for
 // performance reasons to buffer it.
-func (client *Client) RunWithInput(command string, stdout io.Writer, stderr io.Writer, stdin io.Reader) (err error) {
+func (client *Client) RunWithInput(command string, stdout io.Writer, stderr io.Writer, stdin io.Reader) (exitCode int, err error) {
 	shell, err := client.CreateShell()
 	if err != nil {
-		return err
+		return 1, err
 	}
 	defer shell.Close()
 	var cmd *Command
 	cmd, err = shell.Execute(command)
 	if err != nil {
-		return err
+		return 1, err
 	}
 	go io.Copy(cmd.Stdin, stdin)
 	go io.Copy(stdout, cmd.Stdout)
 	go io.Copy(stderr, cmd.Stderr)
 	cmd.Wait()
-	return nil
+	return cmd.exitCode, nil
 }
