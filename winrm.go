@@ -18,18 +18,18 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"github.com/masterzen/winrm/winrm"
 	"os"
-	"fmt"
 )
 
 func main() {
 	var (
 		hostname string
-		user string
-		pass string
-		cmd string
-		port int
+		user     string
+		pass     string
+		cmd      string
+		port     int
 	)
 
 	flag.StringVar(&hostname, "hostname", "localhost", "winrm host")
@@ -40,9 +40,11 @@ func main() {
 
 	cmd = flag.Arg(0)
 	client := winrm.NewClient(&winrm.Endpoint{hostname, port}, user, pass)
-	err := client.RunWithInput(cmd, os.Stdout, os.Stderr, os.Stdin)
+	exitCode, err := client.RunWithInput(cmd, os.Stdout, os.Stderr, os.Stdin)
 
 	if err != nil {
 		fmt.Println(err)
 	}
+
+	os.Exit(exitCode)
 }
