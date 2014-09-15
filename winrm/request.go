@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"github.com/masterzen/winrm/soap"
 	"github.com/nu7hatch/gouuid"
+	"strings"
 )
 
 func genUUID() string {
@@ -48,6 +49,12 @@ func NewExecuteCommandRequest(uri string, shellId string, command string, params
 	}
 	message = soap.NewMessage()
 	defaultHeaders(uri, message, params).Action("http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Command").ResourceURI("http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd").ShellId(shellId).AddOption(soap.NewHeaderOption("WINRS_CONSOLEMODE_STDIN", "FALSE")).Build()
+
+	// WinRM only wants a specific subset of characters encoded.  If you try
+	// to encode quotes or escape like &#34;, it won't work.
+	command = strings.Replace(command, "&", "&amp;", -1)
+	command = strings.Replace(command, "<", "&lt;", -1)
+	command = strings.Replace(command, ">", "&gt;", -1)
 
 	body := message.CreateBodyElement("CommandLine", soap.NS_WIN_SHELL)
 	commandElement := message.CreateElement(body, "Command", soap.NS_WIN_SHELL)
