@@ -46,6 +46,17 @@ func (s *WinRMSuite) TestExecuteCommandRequest(c *C) {
 	assertXPath(c, request.Doc(), "//rsp:CommandLine/rsp:Command", "\"ipconfig /all\"")
 }
 
+func (s *WinRMSuite) TestExecuteCommandRequestEscaped(c *C) {
+	request := NewExecuteCommandRequest("http://localhost", "SHELLID", "&<>\"'", nil)
+	defer request.Free()
+
+	assertXPath(c, request.Doc(), "//a:Action", "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Command")
+	assertXPath(c, request.Doc(), "//a:To", "http://localhost")
+	assertXPath(c, request.Doc(), "//w:Selector[@Name=\"ShellId\"]", "SHELLID")
+	assertXPath(c, request.Doc(), "//w:Option[@Name=\"WINRS_CONSOLEMODE_STDIN\"]", "FALSE")
+	assertXPath(c, request.Doc(), "//rsp:CommandLine/rsp:Command", "\"&<>\"'\"")
+}
+
 func (s *WinRMSuite) TestGetOutputRequest(c *C) {
 	request := NewGetOutputRequest("http://localhost", "SHELLID", "COMMANDID", "stdout stderr", nil)
 	defer request.Free()
