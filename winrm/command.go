@@ -104,6 +104,8 @@ func (command *Command) slurpAllOutput() (finished bool, err error) {
 
 	response, err := command.client.sendRequest(request)
 	if err != nil {
+		command.Stderr.write.CloseWithError(err)
+		command.Stdout.write.CloseWithError(err)
 		return true, err
 	}
 
