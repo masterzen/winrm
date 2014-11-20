@@ -5,6 +5,9 @@ the use of WinRM/WinRS.
 
 _Note_: this library doesn't support domain users (it doesn't support GSSAPI nor Kerberos). It's primary target is to execute remote commands on EC2 windows machines.
 
+[![Build Status](https://travis-ci.org/masterzen/winrm.svg?branch=master)](https://travis-ci.org/masterzen/winrm)
+[![Coverage Status](https://coveralls.io/repos/masterzen/winrm/badge.png)](https://coveralls.io/r/masterzen/winrm)
+
 ## Contact
 
 - Bugs: https://github.com/masterzen/winrm/issues
