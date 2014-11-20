@@ -5,6 +5,7 @@ go:
 - tip
 install:
 - make updatedeps
+- go build
 before_install:
 - go get github.com/axw/gocov/gocov
 - go get github.com/mattn/goveralls
@@ -13,8 +14,8 @@ before_install:
 - go get github.com/modocache/gover
 - go get launchpad.net/gocheck
 script:
-- go build
 - make ci
+after_script:
 - $HOME/gopath/bin/goveralls -service="travis-ci" -coverprofile=profile.cov -repotoken $COVERALLS_TOKEN
 matrix:
   allow_failures:
