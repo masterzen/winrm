@@ -89,3 +89,24 @@
 </env:Envelope>
 
 
+<!-- Close shell -->
+<?xml version="1.0" encoding="UTF-8"?>
+<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope" xmlns:a="http://schemas.xmlsoap.org/ws/2004/08/addressing" x
+   <env:Header>
+      <a:To>http://localhost:5985/wsman</a:To>
+      <a:ReplyTo>
+         <a:Address mustUnderstand="true">http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</a:Address>
+      </a:ReplyTo>
+      <w:MaxEnvelopeSize mustUnderstand="true">153600</w:MaxEnvelopeSize>
+      <w:OperationTimeout>PT60S</w:OperationTimeout>
+      <a:MessageID>uuid:ff1fcd4b-3f7a-4732-62e1-2afa9fbfd344</a:MessageID>
+      <w:Locale mustUnderstand="false" xml:lang="en-US" />
+      <p:DataLocale mustUnderstand="false" xml:lang="en-US" />
+      <a:Action mustUnderstand="true">http://schemas.xmlsoap.org/ws/2004/09/transfer/Delete</a:Action>
+      <w:SelectorSet>
+         <w:Selector Name="ShellId">D24CE524-7FDD-481F-8824-87A2CC6A80AE</w:Selector>
+      </w:SelectorSet>
+      <w:ResourceURI mustUnderstand="true">http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd</w:ResourceURI>
+   </env:Header>
+   <env:Body />
+</env:Envelope>
