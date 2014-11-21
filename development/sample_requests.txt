@@ -1,4 +1,4 @@
-
+<!-- Create Shell -->
 <?xml version="1.0" encoding="UTF-8"?>
 <env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope" xmlns:a="http://schemas.xmlsoap.org/ws/2004/08/addressing" xmlns:p="http://schemas.microsoft.com/wbem/wsman/1/wsman.xsd" xmlns:rsp="http://schemas.microsoft.com/wbem/wsman/1/windows/shell" xmlns:w="http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd">
    <env:Header>
@@ -26,7 +26,7 @@
    </env:Body>
 </env:Envelope>
 
-
+<!-- shellid: 0179DFE0-5409-4F07-946E-54635608A269 -->
 
 
 
@@ -44,7 +44,7 @@
       <p:DataLocale mustUnderstand="false" xml:lang="en-US" />
       <a:Action mustUnderstand="true">http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Command</a:Action>
       <w:SelectorSet>
-         <w:Selector Name="ShellId">0FB53AE6-B1A2-4A1D-8D6C-57C944D7A4DC</w:Selector>
+         <w:Selector Name="ShellId">0179DFE0-5409-4F07-946E-54635608A269</w:Selector>
       </w:SelectorSet>
       <w:ResourceURI mustUnderstand="true">http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd</w:ResourceURI>
       <w:OptionSet>
@@ -59,7 +59,7 @@
    </env:Body>
 </env:Envelope>
 
-
+<!-- command id: 98EA8A09-FCCF-43A9-8D76-AA678A2FDE80 -->
 
 
 
@@ -89,9 +89,11 @@
 </env:Envelope>
 
 
+
+
 <!-- Close shell -->
 <?xml version="1.0" encoding="UTF-8"?>
-<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope" xmlns:a="http://schemas.xmlsoap.org/ws/2004/08/addressing" x
+<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope" xmlns:a="http://schemas.xmlsoap.org/ws/2004/08/addressing" xmlns:p="http://schemas.microsoft.com/wbem/wsman/1/wsman.xsd" xmlns:rsp="http://schemas.microsoft.com/wbem/wsman/1/windows/shell" xmlns:w="http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd">
    <env:Header>
       <a:To>http://localhost:5985/wsman</a:To>
       <a:ReplyTo>
@@ -110,3 +112,33 @@
    </env:Header>
    <env:Body />
 </env:Envelope>
+
+
+
+<!-- Working Signal Request -->
+<?xml version="1.0" encoding="UTF-8"?>
+<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope" xmlns:a="http://schemas.xmlsoap.org/ws/2004/08/addressing" xmlns:b="http://schemas.dmtf.org/wbem/wsman/1/cimbinding.xsd" xmlns:cfg="http://schemas.microsoft.com/wbem/wsman/1/config" xmlns:n="http://schemas.xmlsoap.org/ws/2004/09/enumeration" xmlns:p="http://schemas.microsoft.com/wbem/wsman/1/wsman.xsd" xmlns:rsp="http://schemas.microsoft.com/wbem/wsman/1/windows/shell" xmlns:w="http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd" xmlns:x="http://schemas.xmlsoap.org/ws/2004/09/transfer" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+   <env:Header>
+      <a:To>http://localhost:5985/wsman</a:To>
+      <a:ReplyTo>
+         <a:Address mustUnderstand="true">http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</a:Address>
+      </a:ReplyTo>
+      <w:MaxEnvelopeSize mustUnderstand="true">153600</w:MaxEnvelopeSize>
+      <a:MessageID>uuid:BE57E710-1E58-4955-AD2B-FF841ED3F52B</a:MessageID>
+      <w:Locale xml:lang="en-US" mustUnderstand="false" />
+      <p:DataLocale xml:lang="en-US" mustUnderstand="false" />
+      <w:OperationTimeout>PT5M0S</w:OperationTimeout>
+      <w:ResourceURI mustUnderstand="true">http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd</w:ResourceURI>
+      <a:Action mustUnderstand="true">http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Signal</a:Action>
+      <w:SelectorSet>
+         <w:Selector Name="ShellId">0179DFE0-5409-4F07-946E-54635608A269</w:Selector>
+      </w:SelectorSet>
+   </env:Header>
+   <env:Body>
+      <rsp:Signal CommandId="98EA8A09-FCCF-43A9-8D76-AA678A2FDE80">
+         <rsp:Code>http://schemas.microsoft.com/wbem/wsman/1/windows/shell/signal/terminate</rsp:Code>
+      </rsp:Signal>
+   </env:Body>
+</env:Envelope>
+
+

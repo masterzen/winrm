@@ -70,7 +70,7 @@ func (s *WinRMSuite) TestSignalRequest(c *C) {
 	request := NewSignalRequest("http://localhost", "SHELLID", "COMMANDID", nil)
 	defer request.Free()
 
-	assertXPath(c, request.Doc(), "//a:Action", "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Command")
+	assertXPath(c, request.Doc(), "//a:Action", "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Signal")
 	assertXPath(c, request.Doc(), "//a:To", "http://localhost")
 	assertXPath(c, request.Doc(), "//w:Selector[@Name=\"ShellId\"]", "SHELLID")
 	assertXPath(c, request.Doc(), "//rsp:Signal[@CommandId=\"COMMANDID\"]/rsp:Code", "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/signal/terminate")
