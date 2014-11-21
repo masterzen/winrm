@@ -88,8 +88,7 @@ func (command *Command) Close() (err error) {
 	defer request.Free()
 
 	_, err = command.client.sendRequest(request)
-	command.done <- true
-	return
+	return err
 }
 
 func (command *Command) slurpAllOutput() (finished bool, err error) {
