@@ -4,7 +4,7 @@ import (
 	"github.com/masterzen/simplexml/dom"
 	"github.com/masterzen/winrm/soap"
 	"github.com/masterzen/xmlpath"
-	. "launchpad.net/gocheck"
+	. "gopkg.in/check.v1"
 	"strings"
 	"testing"
 )
