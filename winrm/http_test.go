@@ -1,7 +1,7 @@
 package winrm
 
 import (
-	. "launchpad.net/gocheck"
+	. "gopkg.in/check.v1"
 	"net"
 	"net/http"
 	"net/http/httptest"
