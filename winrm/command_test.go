@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"github.com/masterzen/winrm/soap"
 	"io"
-	. "launchpad.net/gocheck"
+	. "gopkg.in/check.v1"
 	"strings"
 )
 

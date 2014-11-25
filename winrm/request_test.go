@@ -4,7 +4,7 @@ import (
 	"github.com/masterzen/simplexml/dom"
 	"github.com/masterzen/winrm/soap"
 	"github.com/masterzen/xmlpath"
-	. "launchpad.net/gocheck"
+	. "gopkg.in/check.v1"
 	"strings"
 	"testing"
 )
@@ -42,19 +42,8 @@ func (s *WinRMSuite) TestExecuteCommandRequest(c *C) {
 	assertXPath(c, request.Doc(), "//a:Action", "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Command")
 	assertXPath(c, request.Doc(), "//a:To", "http://localhost")
 	assertXPath(c, request.Doc(), "//w:Selector[@Name=\"ShellId\"]", "SHELLID")
-	assertXPath(c, request.Doc(), "//w:Option[@Name=\"WINRS_CONSOLEMODE_STDIN\"]", "FALSE")
-	assertXPath(c, request.Doc(), "//rsp:CommandLine/rsp:Command", "\"ipconfig /all\"")
-}
-
-func (s *WinRMSuite) TestExecuteCommandRequestEscaped(c *C) {
-	request := NewExecuteCommandRequest("http://localhost", "SHELLID", "&<>\"'", nil)
-	defer request.Free()
-
-	assertXPath(c, request.Doc(), "//a:Action", "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Command")
-	assertXPath(c, request.Doc(), "//a:To", "http://localhost")
-	assertXPath(c, request.Doc(), "//w:Selector[@Name=\"ShellId\"]", "SHELLID")
-	assertXPath(c, request.Doc(), "//w:Option[@Name=\"WINRS_CONSOLEMODE_STDIN\"]", "FALSE")
-	assertXPath(c, request.Doc(), "//rsp:CommandLine/rsp:Command", "\"&<>\"'\"")
+	assertXPath(c, request.Doc(), "//w:Option[@Name=\"WINRS_CONSOLEMODE_STDIN\"]", "TRUE")
+	assertXPath(c, request.Doc(), "//rsp:CommandLine/rsp:Command", "ipconfig /all")
 }
 
 func (s *WinRMSuite) TestGetOutputRequest(c *C) {
@@ -81,7 +70,7 @@ func (s *WinRMSuite) TestSignalRequest(c *C) {
 	request := NewSignalRequest("http://localhost", "SHELLID", "COMMANDID", nil)
 	defer request.Free()
 
-	assertXPath(c, request.Doc(), "//a:Action", "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Command")
+	assertXPath(c, request.Doc(), "//a:Action", "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Signal")
 	assertXPath(c, request.Doc(), "//a:To", "http://localhost")
 	assertXPath(c, request.Doc(), "//w:Selector[@Name=\"ShellId\"]", "SHELLID")
 	assertXPath(c, request.Doc(), "//rsp:Signal[@CommandId=\"COMMANDID\"]/rsp:Code", "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/signal/terminate")

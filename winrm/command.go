@@ -88,8 +88,7 @@ func (command *Command) Close() (err error) {
 	defer request.Free()
 
 	_, err = command.client.sendRequest(request)
-	command.done <- true
-	return
+	return err
 }
 
 func (command *Command) slurpAllOutput() (finished bool, err error) {
@@ -103,27 +102,32 @@ func (command *Command) slurpAllOutput() (finished bool, err error) {
 	defer request.Free()
 
 	response, err := command.client.sendRequest(request)
-	if err == nil {
-		var exitCode int
-		var stdout, stderr bytes.Buffer
-		finished, exitCode, err = ParseSlurpOutputErrResponse(response, &stdout, &stderr)
-		if err != nil {
-			command.Stderr.write.CloseWithError(err)
-			command.Stdout.write.CloseWithError(err)
-			return
-		}
-		if stdout.Len() > 0 {
-			command.Stdout.write.Write(stdout.Bytes())
-		}
-		if stderr.Len() > 0 {
-			command.Stderr.write.Write(stderr.Bytes())
-		}
-		if finished {
-			command.exitCode = exitCode
-			command.Stderr.write.Close()
-			command.Stdout.write.Close()
-		}
+	if err != nil {
+		command.Stderr.write.CloseWithError(err)
+		command.Stdout.write.CloseWithError(err)
+		return true, err
 	}
+
+	var exitCode int
+	var stdout, stderr bytes.Buffer
+	finished, exitCode, err = ParseSlurpOutputErrResponse(response, &stdout, &stderr)
+	if err != nil {
+		command.Stderr.write.CloseWithError(err)
+		command.Stdout.write.CloseWithError(err)
+		return true, err
+	}
+	if stdout.Len() > 0 {
+		command.Stdout.write.Write(stdout.Bytes())
+	}
+	if stderr.Len() > 0 {
+		command.Stderr.write.Write(stderr.Bytes())
+	}
+	if finished {
+		command.exitCode = exitCode
+		command.Stderr.write.Close()
+		command.Stdout.write.Close()
+	}
+
 	return
 }
 
