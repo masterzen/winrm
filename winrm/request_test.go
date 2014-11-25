@@ -43,7 +43,7 @@ func (s *WinRMSuite) TestExecuteCommandRequest(c *C) {
 	assertXPath(c, request.Doc(), "//a:To", "http://localhost")
 	assertXPath(c, request.Doc(), "//w:Selector[@Name=\"ShellId\"]", "SHELLID")
 	assertXPath(c, request.Doc(), "//w:Option[@Name=\"WINRS_CONSOLEMODE_STDIN\"]", "TRUE")
-	assertXPath(c, request.Doc(), "//rsp:CommandLine/rsp:Command", "\"ipconfig /all\"")
+	assertXPath(c, request.Doc(), "//rsp:CommandLine/rsp:Command", "ipconfig /all")
 }
 
 func (s *WinRMSuite) TestGetOutputRequest(c *C) {

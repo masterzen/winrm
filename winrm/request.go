@@ -53,10 +53,12 @@ func NewExecuteCommandRequest(uri string, shellId string, command string, params
 	params.url = uri
 	message = soap.NewMessage()
 	defaultHeaders(message, params).Action("http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Command").ResourceURI("http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd").ShellId(shellId).AddOption(soap.NewHeaderOption("WINRS_CONSOLEMODE_STDIN", "TRUE")).AddOption(soap.NewHeaderOption("WINRS_SKIP_CMD_SHELL", "FALSE")).Build()
+	// ensure special characters like & don't mangle the request XML
+	command = "<![CDATA[" + command + "]]>"
 
 	body := message.CreateBodyElement("CommandLine", soap.NS_WIN_SHELL)
 	commandElement := message.CreateElement(body, "Command", soap.NS_WIN_SHELL)
-	commandElement.SetContent("\"" + command + "\"")
+	commandElement.SetContent(command)
 	return
 }
 
