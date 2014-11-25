@@ -2,7 +2,7 @@ package winrm
 
 import (
 	"github.com/masterzen/winrm/soap"
-	. "launchpad.net/gocheck"
+	. "gopkg.in/check.v1"
 )
 
 func (s *WinRMSuite) TestShellExecuteResponse(c *C) {

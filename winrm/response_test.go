@@ -2,7 +2,7 @@ package winrm
 
 import (
 	"bytes"
-	. "launchpad.net/gocheck"
+	. "gopkg.in/check.v1"
 )
 
 func (s *WinRMSuite) TestOpenShellResponse(c *C) {

@@ -17,13 +17,17 @@ deps:
 updatedeps:
 	@echo "$(OK_COLOR)==> Updating all dependencies$(NO_COLOR)"
 	@go get -d -v -u ./...
-	@echo $(DEPS) | xargs -n1 go get -d -u
+	@echo $(DEPS) | xargs -n1 go get -d -u -t
 
 clean:
 	@rm -rf bin/ pkg/ src/
 
 format:
 	go fmt ./...
+
+ci: deps
+	@echo "$(OK_COLOR)==> Testing Packer with Coveralls...$(NO_COLOR)"
+	"$(CURDIR)/scripts/test.sh"
 
 test: deps
 	@echo "$(OK_COLOR)==> Testing Packer...$(NO_COLOR)"

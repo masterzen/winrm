@@ -1,6 +1,7 @@
 package winrm
 
 type Parameters struct {
+	url          string
 	Timeout      string
 	Locale       string
 	EnvelopeSize int
