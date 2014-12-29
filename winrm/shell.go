@@ -7,12 +7,7 @@ type Shell struct {
 }
 
 // Execute command on the given Shell, returning either an error or a Command
-func (shell *Shell) Execute(command string) (cmd *Command, err error) {
-	return shell.ExecuteWithArguments(command, "")
-}
-
-// Execute command wth arguments on the given Shell, returning either an error or a Command
-func (shell *Shell) ExecuteWithArguments(command, arguments string) (cmd *Command, err error) {
+func (shell *Shell) Execute(command string, arguments ...string) (cmd *Command, err error) {
 	request := NewExecuteCommandRequest(shell.client.url, shell.ShellId, command, arguments, &shell.client.Parameters)
 	defer request.Free()
 

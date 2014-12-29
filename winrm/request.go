@@ -47,7 +47,7 @@ func NewDeleteShellRequest(uri string, shellId string, params *Parameters) (mess
 	return
 }
 
-func NewExecuteCommandRequest(uri string, shellId string, command, arguments string, params *Parameters) (message *soap.SoapMessage) {
+func NewExecuteCommandRequest(uri, shellId, command string, arguments []string, params *Parameters) (message *soap.SoapMessage) {
 	if params == nil {
 		params = DefaultParameters()
 	}
@@ -61,10 +61,10 @@ func NewExecuteCommandRequest(uri string, shellId string, command, arguments str
 	commandElement := message.CreateElement(body, "Command", soap.NS_WIN_SHELL)
 	commandElement.SetContent(command)
 
-	if arguments != "" {
-		arguments = "<![CDATA[" + arguments + "]]>"
+	for _, arg := range arguments {
+		arg = "<![CDATA[" + arg + "]]>"
 		argumentsElement := message.CreateElement(body, "Arguments", soap.NS_WIN_SHELL)
-		argumentsElement.SetContent(arguments)
+		argumentsElement.SetContent(arg)
 	}
 
 	return

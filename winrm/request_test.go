@@ -37,7 +37,7 @@ func (s *WinRMSuite) TestDeleteShellRequest(c *C) {
 }
 
 func (s *WinRMSuite) TestExecuteCommandRequest(c *C) {
-	request := NewExecuteCommandRequest("http://localhost", "SHELLID", "ipconfig /all", "", nil)
+	request := NewExecuteCommandRequest("http://localhost", "SHELLID", "ipconfig /all", []string{}, nil)
 	defer request.Free()
 
 	assertXPath(c, request.Doc(), "//a:Action", "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Command")
@@ -49,15 +49,17 @@ func (s *WinRMSuite) TestExecuteCommandRequest(c *C) {
 }
 
 func (s *WinRMSuite) TestExecuteCommandWithArgumentsRequest(c *C) {
-	request := NewExecuteCommandRequest("http://localhost", "SHELLID", "powershell", "Get-ChildItem 'C:\\Temp'", nil)
+	args := []string{"/p", "C:\\test.txt"}
+	request := NewExecuteCommandRequest("http://localhost", "SHELLID", "del", args, nil)
 	defer request.Free()
 
 	assertXPath(c, request.Doc(), "//a:Action", "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Command")
 	assertXPath(c, request.Doc(), "//a:To", "http://localhost")
 	assertXPath(c, request.Doc(), "//w:Selector[@Name=\"ShellId\"]", "SHELLID")
 	assertXPath(c, request.Doc(), "//w:Option[@Name=\"WINRS_CONSOLEMODE_STDIN\"]", "TRUE")
-	assertXPath(c, request.Doc(), "//rsp:CommandLine/rsp:Command", "powershell")
-	assertXPath(c, request.Doc(), "//rsp:CommandLine/rsp:Arguments", "Get-ChildItem 'C:\\Temp'")
+	assertXPath(c, request.Doc(), "//rsp:CommandLine/rsp:Command", "del")
+	assertXPath(c, request.Doc(), "//rsp:CommandLine/rsp:Arguments", "/p")
+	assertXPath(c, request.Doc(), "//rsp:CommandLine/rsp:Arguments", "C:\\test.txt")
 }
 
 func (s *WinRMSuite) TestGetOutputRequest(c *C) {
@@ -97,9 +99,21 @@ func assertXPath(c *C, doc *dom.Document, request string, expected string) {
 		c.Fatalf("Xpath %s gives error %s", request, err)
 	}
 
-	value, ok := path.String(root)
+	ok := path.Exists(root)
 	c.Assert(ok, Equals, true)
-	c.Assert(value, Equals, expected)
+
+	var foundValue string
+	iter := path.Iter(root)
+	for iter.Next() {
+		foundValue = iter.Node().String()
+		if foundValue == expected {
+			break
+		}
+	}
+
+	if foundValue != expected {
+		c.Errorf("Should have found '%s', but found '%s' instead", expected, foundValue)
+	}
 }
 
 func assertXPathNil(c *C, doc *dom.Document, request string) {
@@ -109,7 +123,7 @@ func assertXPathNil(c *C, doc *dom.Document, request string) {
 		c.Fatalf("Xpath %s gives error %s", request, err)
 	}
 
-	_, ok := path.String(root)
+	ok := path.Exists(root)
 	c.Assert(ok, Equals, false)
 }
 
