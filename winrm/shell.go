@@ -7,8 +7,8 @@ type Shell struct {
 }
 
 // Execute command on the given Shell, returning either an error or a Command
-func (shell *Shell) Execute(command string) (cmd *Command, err error) {
-	request := NewExecuteCommandRequest(shell.client.url, shell.ShellId, command, &shell.client.Parameters)
+func (shell *Shell) Execute(command string, arguments ...string) (cmd *Command, err error) {
+	request := NewExecuteCommandRequest(shell.client.url, shell.ShellId, command, arguments, &shell.client.Parameters)
 	defer request.Free()
 
 	response, err := shell.client.sendRequest(request)

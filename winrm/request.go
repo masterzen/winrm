@@ -2,6 +2,7 @@ package winrm
 
 import (
 	"encoding/base64"
+
 	"github.com/masterzen/winrm/soap"
 	"github.com/nu7hatch/gouuid"
 )
@@ -46,19 +47,26 @@ func NewDeleteShellRequest(uri string, shellId string, params *Parameters) (mess
 	return
 }
 
-func NewExecuteCommandRequest(uri string, shellId string, command string, params *Parameters) (message *soap.SoapMessage) {
+func NewExecuteCommandRequest(uri, shellId, command string, arguments []string, params *Parameters) (message *soap.SoapMessage) {
 	if params == nil {
 		params = DefaultParameters()
 	}
 	params.url = uri
 	message = soap.NewMessage()
 	defaultHeaders(message, params).Action("http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Command").ResourceURI("http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd").ShellId(shellId).AddOption(soap.NewHeaderOption("WINRS_CONSOLEMODE_STDIN", "TRUE")).AddOption(soap.NewHeaderOption("WINRS_SKIP_CMD_SHELL", "FALSE")).Build()
+	body := message.CreateBodyElement("CommandLine", soap.NS_WIN_SHELL)
+
 	// ensure special characters like & don't mangle the request XML
 	command = "<![CDATA[" + command + "]]>"
-
-	body := message.CreateBodyElement("CommandLine", soap.NS_WIN_SHELL)
 	commandElement := message.CreateElement(body, "Command", soap.NS_WIN_SHELL)
 	commandElement.SetContent(command)
+
+	for _, arg := range arguments {
+		arg = "<![CDATA[" + arg + "]]>"
+		argumentsElement := message.CreateElement(body, "Arguments", soap.NS_WIN_SHELL)
+		argumentsElement.SetContent(arg)
+	}
+
 	return
 }
 
