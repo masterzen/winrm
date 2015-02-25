@@ -2,8 +2,9 @@ package winrm
 
 import (
 	"bytes"
-	"github.com/masterzen/winrm/soap"
 	"io"
+
+	"github.com/masterzen/winrm/soap"
 )
 
 type Client struct {
@@ -58,35 +59,35 @@ func (client *Client) sendRequest(request *soap.SoapMessage) (response string, e
 
 // Run will run command on the the remote host, writing the process stdout and stderr to
 // the given writers. Note with this method it isn't possible to inject stdin.
-func (client *Client) Run(command string, stdout io.Writer, stderr io.Writer) (err error) {
+func (client *Client) Run(command string, stdout io.Writer, stderr io.Writer) (exitCode int, err error) {
 	shell, err := client.CreateShell()
 	if err != nil {
-		return err
+		return 0, err
 	}
 	var cmd *Command
 	cmd, err = shell.Execute(command)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	go io.Copy(stdout, cmd.Stdout)
 	go io.Copy(stderr, cmd.Stderr)
 	cmd.Wait()
 	shell.Close()
-	return nil
+	return cmd.ExitCode(), nil
 }
 
 // Run will run command on the the remote host, returning the process stdout and stderr
 // as strings, and using the input stdin string as the process input
-func (client *Client) RunWithString(command string, stdin string) (stdout string, stderr string, err error) {
+func (client *Client) RunWithString(command string, stdin string) (stdout string, stderr string, exitCode int, err error) {
 	shell, err := client.CreateShell()
 	if err != nil {
-		return "", "", err
+		return "", "", 0, err
 	}
 	defer shell.Close()
 	var cmd *Command
 	cmd, err = shell.Execute(command)
 	if err != nil {
-		return "", "", err
+		return "", "", 0, err
 	}
 	if len(stdin) > 0 {
 		cmd.Stdin.Write([]byte(stdin))
@@ -95,7 +96,7 @@ func (client *Client) RunWithString(command string, stdin string) (stdout string
 	go io.Copy(&outWriter, cmd.Stdout)
 	go io.Copy(&errWriter, cmd.Stderr)
 	cmd.Wait()
-	return outWriter.String(), errWriter.String(), nil
+	return outWriter.String(), errWriter.String(), cmd.ExitCode(), nil
 }
 
 // Run will run command on the the remote host, writing the process stdout and stderr to
@@ -103,20 +104,20 @@ func (client *Client) RunWithString(command string, stdin string) (stdout string
 // Warning stdin (not stdout/stderr) are bufferized, which means reading only one byte in stdin will
 // send a winrm http packet to the remote host. If stdin is a pipe, it might be better for
 // performance reasons to buffer it.
-func (client *Client) RunWithInput(command string, stdout io.Writer, stderr io.Writer, stdin io.Reader) (err error) {
+func (client *Client) RunWithInput(command string, stdout io.Writer, stderr io.Writer, stdin io.Reader) (exitCode int, err error) {
 	shell, err := client.CreateShell()
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer shell.Close()
 	var cmd *Command
 	cmd, err = shell.Execute(command)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	go io.Copy(cmd.Stdin, stdin)
 	go io.Copy(stdout, cmd.Stdout)
 	go io.Copy(stderr, cmd.Stderr)
 	cmd.Wait()
-	return nil
+	return cmd.ExitCode(), nil
 }
