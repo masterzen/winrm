@@ -19,6 +19,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"os"
 
 	"github.com/masterzen/winrm/winrm"
@@ -31,18 +32,40 @@ func main() {
 		pass     string
 		cmd      string
 		port     int
+		https    bool
+		insecure bool
+		cacert   string
 	)
 
 	flag.StringVar(&hostname, "hostname", "localhost", "winrm host")
 	flag.StringVar(&user, "username", "vagrant", "winrm admin username")
 	flag.StringVar(&pass, "password", "vagrant", "winrm admin password")
 	flag.IntVar(&port, "port", 5985, "winrm port")
+	flag.BoolVar(&https, "https", false, "use https")
+	flag.BoolVar(&insecure, "insecure", false, "skip SSL validation")
+	flag.StringVar(&cacert, "cacert", "", "CA certificate to use")
 	flag.Parse()
 
-	cmd = flag.Arg(0)
-	client := winrm.NewClient(&winrm.Endpoint{hostname, port}, user, pass)
-	exitCode, err := client.RunWithInput(cmd, os.Stdout, os.Stderr, os.Stdin)
+	var certBytes []byte
+	var err error
+	if cacert != "" {
+		certBytes, err = ioutil.ReadFile(cacert)
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+	} else {
+		certBytes = nil
+	}
 
+	cmd = flag.Arg(0)
+	client, err := winrm.NewClient(&winrm.Endpoint{Host: hostname, Port: port, HTTPS: https, Insecure: insecure, CACert: &certBytes}, user, pass)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
+	exitCode, err := client.RunWithInput(cmd, os.Stdout, os.Stderr, os.Stdin)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)

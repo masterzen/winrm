@@ -2,39 +2,78 @@ package winrm
 
 import (
 	"bytes"
+	"crypto/tls"
+	"crypto/x509"
+	"fmt"
 	"io"
+	"net/http"
 
 	"github.com/masterzen/winrm/soap"
 )
 
 type Client struct {
 	Parameters
-	username string
-	password string
-	useHTTPS bool
-	url      string
-	http     HttpPost
+	username  string
+	password  string
+	useHTTPS  bool
+	url       string
+	http      HttpPost
+	transport *http.Transport
 }
 
 // NewClient will create a new remote client on url, connecting with user and password
 // This function doesn't connect (connection happens only when CreateShell is called)
-func NewClient(endpoint *Endpoint, user, password string) (client *Client) {
+func NewClient(endpoint *Endpoint, user, password string) (client *Client, err error) {
 	params := DefaultParameters()
-	client = NewClientWithParameters(endpoint, user, password, params)
+	client, err = NewClientWithParameters(endpoint, user, password, params)
 	return
 }
 
 // NewClient will create a new remote client on url, connecting with user and password
 // This function doesn't connect (connection happens only when CreateShell is called)
-func NewClientWithParameters(endpoint *Endpoint, user, password string, params *Parameters) (client *Client) {
+func NewClientWithParameters(endpoint *Endpoint, user, password string, params *Parameters) (client *Client, err error) {
+	transport, err := newTransport(endpoint)
+
 	client = &Client{
 		Parameters: *params,
 		username:   user,
 		password:   password,
 		url:        endpoint.url(),
 		http:       Http_post,
+		useHTTPS:   endpoint.HTTPS,
+		transport:  transport,
 	}
 	return
+}
+
+// newTransport will create a new HTTP Transport, with options specified within the endpoint configuration
+func newTransport(endpoint *Endpoint) (*http.Transport, error) {
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: endpoint.Insecure,
+		},
+	}
+
+	if endpoint.CACert != nil && len(*endpoint.CACert) > 0 {
+		certPool, err := readCACerts(endpoint.CACert)
+		if err != nil {
+			return nil, err
+		}
+
+		transport.TLSClientConfig.RootCAs = certPool
+	}
+
+	return transport, nil
+}
+
+func readCACerts(certs *[]byte) (*x509.CertPool, error) {
+	certPool := x509.NewCertPool()
+
+	if !certPool.AppendCertsFromPEM(*certs) {
+		return nil, fmt.Errorf("Unable to read certificates")
+	}
+
+	return certPool, nil
 }
 
 // CreateShell will create a WinRM Shell, which is the prealable for running

@@ -2,10 +2,11 @@ package winrm
 
 import (
 	"fmt"
-	"github.com/masterzen/winrm/soap"
 	"io/ioutil"
 	"net/http"
 	"strings"
+
+	"github.com/masterzen/winrm/soap"
 )
 
 var soapXML string = "application/soap+xml"
@@ -32,7 +33,7 @@ func body(response *http.Response) (content string, err error) {
 }
 
 func Http_post(client *Client, request *soap.SoapMessage) (response string, err error) {
-	httpClient := &http.Client{}
+	httpClient := &http.Client{Transport: client.transport}
 
 	req, err := http.NewRequest("POST", client.url, strings.NewReader(request.String()))
 	if err != nil {
