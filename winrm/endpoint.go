@@ -3,10 +3,20 @@ package winrm
 import "fmt"
 
 type Endpoint struct {
-	Host string
-	Port int
+	Host     string
+	Port     int
+	HTTPS    bool
+	Insecure bool
+	CACert   *[]byte
 }
 
 func (ep *Endpoint) url() string {
-	return fmt.Sprintf("http://%s:%d/wsman", ep.Host, ep.Port)
+	var scheme string
+	if ep.HTTPS {
+		scheme = "https"
+	} else {
+		scheme = "http"
+	}
+
+	return fmt.Sprintf("%s://%s:%d/wsman", scheme, ep.Host, ep.Port)
 }

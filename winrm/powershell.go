@@ -7,7 +7,6 @@ import (
 
 // Wraps a PowerShell script and prepares it for execution by the winrm client
 func Powershell(psCmd string) string {
-
 	// 2 byte chars to make PowerShell happy
 	wideCmd := ""
 	for _, b := range []byte(psCmd) {
