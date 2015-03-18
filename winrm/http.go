@@ -30,6 +30,7 @@ func body(response *http.Response) (content string, err error) {
 		err = fmt.Errorf("invalid content-type: %s", contentType)
 		return
 	}
+	return
 }
 
 func Http_post(client *Client, request *soap.SoapMessage) (response string, err error) {
