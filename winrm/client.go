@@ -112,7 +112,7 @@ func (client *Client) Run(command string, stdout io.Writer, stderr io.Writer) (e
 	go io.Copy(stderr, cmd.Stderr)
 	cmd.Wait()
 	shell.Close()
-	return cmd.ExitCode(), nil
+	return cmd.ExitCode(), cmd.err
 }
 
 // Run will run command on the the remote host, returning the process stdout and stderr
@@ -135,7 +135,7 @@ func (client *Client) RunWithString(command string, stdin string) (stdout string
 	go io.Copy(&outWriter, cmd.Stdout)
 	go io.Copy(&errWriter, cmd.Stderr)
 	cmd.Wait()
-	return outWriter.String(), errWriter.String(), cmd.ExitCode(), nil
+	return outWriter.String(), errWriter.String(), cmd.ExitCode(), cmd.err
 }
 
 // Run will run command on the the remote host, writing the process stdout and stderr to
@@ -158,5 +158,5 @@ func (client *Client) RunWithInput(command string, stdout io.Writer, stderr io.W
 	go io.Copy(stdout, cmd.Stdout)
 	go io.Copy(stderr, cmd.Stderr)
 	cmd.Wait()
-	return cmd.ExitCode(), nil
+	return cmd.ExitCode(), cmd.err
 }
