@@ -37,7 +37,7 @@ type Command struct {
 }
 
 func newCommand(shell *Shell, commandId string) *Command {
-	command := &Command{shell: shell, client: shell.client, commandId: commandId, exitCode: 1, err: nil, done: make(chan bool)}
+	command := &Command{shell: shell, client: shell.client, commandId: commandId, exitCode: 0, err: nil, done: make(chan bool)}
 	command.Stdin = &commandWriter{Command: command, eof: false}
 	command.Stdout = newCommandReader("stdout", command)
 	command.Stderr = newCommandReader("stderr", command)
