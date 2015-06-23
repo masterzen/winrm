@@ -77,6 +77,9 @@ func (command *Command) check() (err error) {
 	if command.client == nil {
 		return errors.New("Command has no associated client")
 	}
+	if _, err := command.client.check(); err != nil {
+		return errors.New("WinRM client has an error: " + err.Error())
+	}
 	return
 }
 
