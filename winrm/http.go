@@ -45,7 +45,7 @@ func Http_post(client *Client, request *soap.SoapMessage) (response string, err 
 	req.Close = true
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		err = fmt.Errorf("unknown error %s", err)
+		err = fmt.Errorf("error while sending request to endpoint %s", err)
 		return
 	}
 	defer resp.Body.Close()
