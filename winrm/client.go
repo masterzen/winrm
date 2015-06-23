@@ -107,6 +107,9 @@ func (client *Client) CreateShell() (shell *Shell, err error) {
 }
 
 func (client *Client) sendRequest(request *soap.SoapMessage) (response string, err error) {
+	if errorCode, err := client.check(); errorCode != 0 {
+		return "", err
+	}
 	return client.http(client, request)
 }
 
