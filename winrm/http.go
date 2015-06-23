@@ -37,6 +37,7 @@ func Http_post(client *Client, request *soap.SoapMessage) (response string, err 
 
 	req, err := http.NewRequest("POST", client.url, strings.NewReader(request.String()))
 	if err != nil {
+		client.err = err
 		err = fmt.Errorf("impossible to create http request %s", err)
 		return
 	}
@@ -45,6 +46,7 @@ func Http_post(client *Client, request *soap.SoapMessage) (response string, err 
 	req.Close = true
 	resp, err := httpClient.Do(req)
 	if err != nil {
+		client.err = err
 		err = fmt.Errorf("error while sending request to endpoint %s", err)
 		return
 	}

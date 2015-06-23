@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"io"
-	"strings"
 )
 
 type commandWriter struct {
@@ -106,11 +105,6 @@ func (command *Command) slurpAllOutput() (finished bool, err error) {
 
 	response, err := command.client.sendRequest(request)
 	if err != nil {
-		if strings.Contains(err.Error(), "OperationTimeout") {
-			// Operation timeout because there was no command output
-			return
-		}
-
 		command.Stderr.write.CloseWithError(err)
 		command.Stdout.write.CloseWithError(err)
 		return true, err
