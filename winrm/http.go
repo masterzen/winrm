@@ -47,10 +47,10 @@ func Http_post(client *Client, request *soap.SoapMessage) (response string, err 
 		return "", fmt.Errorf("unknown error %s", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("http error: %d", resp.StatusCode)
+	body, err := body(resp)
+	if resp.StatusCode != 200 && err != nil {
+		return "", fmt.Errorf("http error: %d - %s", resp.StatusCode, body)
 	}
 
-	return body(resp)
-
+	return body, err
 }
