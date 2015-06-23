@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/masterzen/winrm/soap"
 )
@@ -17,8 +18,20 @@ type Client struct {
 	password  string
 	useHTTPS  bool
 	url       string
+	err       error
 	http      HttpPost
 	transport *http.Transport
+}
+
+// Map of known terminating errors, this will be utilized for returning error codes and error messages on
+// fatal errors
+var errorCode = map[string]int{
+	"errorEOF":     16000,
+	"errorTimeOut": 16001,
+}
+var errorMessage = map[string]string{
+	"errorEOF":     "A connection terminated unexpectedly, error while sending request to endpoint:",
+	"errorTimeOut": "Operation timeout because there was no command output:",
 }
 
 // NewClient will create a new remote client on url, connecting with user and password
@@ -42,6 +55,7 @@ func NewClientWithParameters(endpoint *Endpoint, user, password string, params *
 		http:       Http_post,
 		useHTTPS:   endpoint.HTTPS,
 		transport:  transport,
+		err:        nil,
 	}
 	return
 }
@@ -94,6 +108,24 @@ func (client *Client) CreateShell() (shell *Shell, err error) {
 
 func (client *Client) sendRequest(request *soap.SoapMessage) (response string, err error) {
 	return client.http(client, request)
+}
+
+// Use this function to map any know terminating errors to exitcodes and messages
+func (client *Client) check() (exitCode int, err error) {
+	if client.err != nil {
+		if strings.Contains(client.err.Error(), "/wsman: EOF") {
+			err = fmt.Errorf("%v %s", errorMessage["errorEOF"], client.err)
+			exitCode = errorCode["errorEOF"]
+			return
+		}
+		if strings.Contains(client.err.Error(), "OperationTimeout") {
+			err = fmt.Errorf("%v %s", errorMessage["errorTimeOut"], client.err)
+			exitCode = errorCode["errorTimeOut"]
+			return
+		}
+	}
+
+	return
 }
 
 // Run will run command on the the remote host, writing the process stdout and stderr to
