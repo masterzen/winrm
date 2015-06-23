@@ -42,7 +42,7 @@ func newCommand(shell *Shell, id string) *Command {
 		shell:    shell,
 		client:   shell.client,
 		ID:       id,
-		exitCode: 1,
+		exitCode: 0,
 		err:      nil,
 		done:     make(chan struct{}),
 		cancel:   make(chan struct{}),
