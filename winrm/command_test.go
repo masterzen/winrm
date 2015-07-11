@@ -54,7 +54,9 @@ func (s *WinRMSuite) TestStdinCommand(c *C) {
 	client.http = func(client *Client, message *soap.SoapMessage) (string, error) {
 		if strings.Contains(message.String(), "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Send") {
 			c.Assert(message.String(), Contains, "c3RhbmRhcmQgaW5wdXQ=")
-			count = 2
+			if count == 1 {
+				count = 2;
+			}
 			return "", nil
 		} else {
 			switch count {
