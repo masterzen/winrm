@@ -54,32 +54,24 @@ func (s *WinRMSuite) TestStdinCommand(c *C) {
 	client.http = func(client *Client, message *soap.SoapMessage) (string, error) {
 		if strings.Contains(message.String(), "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Send") {
 			c.Assert(message.String(), Contains, "c3RhbmRhcmQgaW5wdXQ=")
-			if count == 1 {
-				count = 2;
-			}
 			return "", nil
 		} else {
-			switch count {
-			case 0:
-				{
-					c.Assert(message.String(), Contains, "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Command")
-					count = 1
-					return executeCommandResponse, nil
-				}
-			case 1:
-				{
-					c.Assert(message.String(), Contains, "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Receive")
-					return outputResponse, nil
-				}
-			default:
-				{
-					return doneCommandResponse, nil
-				}
+			if strings.Contains(message.String(), "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Command") {
+				return executeCommandResponse, nil
+			} else if count != 1 && strings.Contains(message.String(), "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Receive") {
+				count = 1
+				return outputResponse, nil
+			} else {
+				return doneCommandResponse, nil
 			}
 		}
 	}
 
 	command, _ := shell.Execute("ipconfig /all")
 	command.Stdin.Write([]byte("standard input"))
+	// slurp output from command
+	var outWriter, errWriter bytes.Buffer
+	go io.Copy(&outWriter, command.Stdout)
+	go io.Copy(&errWriter, command.Stderr)
 	command.Wait()
 }
