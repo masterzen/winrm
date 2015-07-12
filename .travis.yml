@@ -20,6 +20,7 @@ after_script:
 matrix:
   allow_failures:
   - go: tip
+  - go: 1.4
 env:
   global:
     secure: "GTrEtbp3sq14Jjz34pgIO0/Zv19YaDOOUJay4qnzGxs527HkW7YdsWENz0/yGHet+0jMOPatfP3uLaQHVFCNFZLfMYVmD5apMl7hPFrCaDZVvI9+ZwngIZ8gHzcf2Q+L6LxUT523ypjmRR+T1qYfbOy4UXlfGCyHFBbRB7AbMDk="
