@@ -6,7 +6,7 @@ go:
 - 1.4
 - tip
 install:
-- make updatedeps
+- make deps
 - go build -o winrm-cli
 before_install:
 - go get github.com/axw/gocov/gocov
