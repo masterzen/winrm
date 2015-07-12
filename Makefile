@@ -14,6 +14,9 @@ deps:
 	@go get -d -v ./...
 	@echo $(DEPS) | xargs -n1 go get -d
 
+updatedeps:
+	go list ./... | xargs go list -f '{{join .Deps "\n"}}' | grep -v github.com/masterzen/winrm | sort -u | xargs go get -f -u -v
+
 clean:
 	@rm -rf bin/ pkg/ src/
 
@@ -21,11 +24,11 @@ format:
 	go fmt ./...
 
 ci: deps
-	@echo "$(OK_COLOR)==> Testing Packer with Coveralls...$(NO_COLOR)"
+	@echo "$(OK_COLOR)==> Testing with Coveralls...$(NO_COLOR)"
 	"$(CURDIR)/scripts/test.sh"
 
 test: deps
-	@echo "$(OK_COLOR)==> Testing Packer...$(NO_COLOR)"
+	@echo "$(OK_COLOR)==> Testing...$(NO_COLOR)"
 	go test ./...
 
 .PHONY: all clean deps format test updatedeps
