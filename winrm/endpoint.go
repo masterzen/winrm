@@ -8,6 +8,8 @@ type Endpoint struct {
 	HTTPS    bool
 	Insecure bool
 	CACert   *[]byte
+	Key      *[]byte
+	Cert     *[]byte
 }
 
 func (ep *Endpoint) url() string {

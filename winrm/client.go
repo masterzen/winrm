@@ -2,19 +2,25 @@ package winrm
 
 import (
 	"bytes"
-	"crypto/tls"
 	"crypto/x509"
 	"fmt"
 	"io"
-	"net/http"
+	"launchpad.net/gwacl/fork/http"
+	"launchpad.net/gwacl/fork/tls"
 
 	"github.com/masterzen/winrm/soap"
 )
+
+type AuthType string
+
+var BasicAuth AuthType = "basic"
+var CertAuth AuthType = "cert"
 
 type Client struct {
 	Parameters
 	username  string
 	password  string
+	authtype  AuthType
 	useHTTPS  bool
 	url       string
 	http      HttpPost
@@ -23,21 +29,38 @@ type Client struct {
 
 // NewClient will create a new remote client on url, connecting with user and password
 // This function doesn't connect (connection happens only when CreateShell is called)
-func NewClient(endpoint *Endpoint, user, password string) (client *Client, err error) {
+func NewClient(endpoint *Endpoint, user, password string, auth AuthType) (client *Client, err error) {
 	params := DefaultParameters()
-	client, err = NewClientWithParameters(endpoint, user, password, params)
+	client, err = NewClientWithParameters(endpoint, user, password, auth, params)
 	return
 }
 
 // NewClient will create a new remote client on url, connecting with user and password
 // This function doesn't connect (connection happens only when CreateShell is called)
-func NewClientWithParameters(endpoint *Endpoint, user, password string, params *Parameters) (client *Client, err error) {
-	transport, err := newTransport(endpoint)
+func NewClientWithParameters(endpoint *Endpoint, user, password string, auth AuthType, params *Parameters) (client *Client, err error) {
+
+	if auth == CertAuth {
+		if endpoint.Cert == nil || endpoint.Key == nil {
+			return nil, fmt.Errorf("CertAuth needs certificate and key")
+		}
+		if endpoint.HTTPS == false {
+			return nil, fmt.Errorf("Invalid protocol for this transport type (CertAuth). Expected https")
+		}
+	} else if auth == BasicAuth {
+		if user == "" || password == "" {
+			return nil, fmt.Errorf("BasicAuth needs username and password")
+		}
+	} else {
+		return nil, fmt.Errorf("Invalid transport type: %s", auth)
+	}
+
+	transport, err := newTransport(auth, endpoint)
 
 	client = &Client{
 		Parameters: *params,
 		username:   user,
 		password:   password,
+		authtype:   auth,
 		url:        endpoint.url(),
 		http:       Http_post,
 		useHTTPS:   endpoint.HTTPS,
@@ -47,7 +70,7 @@ func NewClientWithParameters(endpoint *Endpoint, user, password string, params *
 }
 
 // newTransport will create a new HTTP Transport, with options specified within the endpoint configuration
-func newTransport(endpoint *Endpoint) (*http.Transport, error) {
+func newTransport(auth AuthType, endpoint *Endpoint) (*http.Transport, error) {
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: endpoint.Insecure,
@@ -61,6 +84,15 @@ func newTransport(endpoint *Endpoint) (*http.Transport, error) {
 		}
 
 		transport.TLSClientConfig.RootCAs = certPool
+	}
+
+	if auth == CertAuth {
+		certPool, err := tls.X509KeyPair(*endpoint.Cert, *endpoint.Key)
+		if err != nil {
+			return nil, fmt.Errorf("Error parsing keypair: %s", err)
+		}
+
+		transport.TLSClientConfig.Certificates = []tls.Certificate{certPool}
 	}
 
 	return transport, nil

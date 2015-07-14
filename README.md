@@ -66,6 +66,12 @@ Once built, you can run remote commands like this:
 ./winrm -hostname remote.domain.com -username "Administrator" -password "secret" "ipconfig /all" 
 ```
 
+or if you are using certificate authentication like this:
+```sh
+./winrm -hostname remote.domain.com -port 5986 -https=true -insecure=true -authtype "cert" -cert "Path_to_Certificate" -key "Path_to_Key" "ipconfig /all" 
+```
+
+
 ## Library Usage
 
 **Warning the API might be subject to change.**
@@ -75,7 +81,7 @@ For the fast version (this doesn't allow to send input to the command):
 ```go
 import "github.com/masterzen/winrm/winrm"
 
-client := winrm.NewClient("localhost", "Administrator", "secret")
+client := winrm.NewClient("localhost", "Administrator", "secret", winrm.BasicAuth)
 client.Run("ipconfig /all", os.Stdout, os.Stderr)
 ```
 
@@ -83,14 +89,15 @@ or
 ```go
 import "github.com/masterzen/winrm/winrm"
 
-client := winrm.NewClient("localhost", "Administrator", "secret")
+client := winrm.NewClient("localhost", "Administrator", "secret", winrm.BasicAuth)
 stdout, stderr, _ := client.RunWithString("ipconfig /all", "")
 println(stdout)
 println(stderr)
 ```
 
-For a more complex example, it is possible to call the various functions directly:
+For a more complex example, it is possible to call the various functions directly.
 
+Using BasicAuth:
 ```go
 import (
   "github.com/masterzen/winrm/winrm"
@@ -101,7 +108,43 @@ import (
 
 stdin := bytes.NewBufferString("ipconfig /all")
 
-client := winrm.NewClient("localhost", "Administrator", "secret")
+client := winrm.NewClient("localhost", "Administrator", "secret", winrm.BasicAuth)
+shell, err := client.CreateShell()
+if err != nil {
+  fmt.Printf("Impossible to create shell %s\n", err)
+  os.Exit(1)
+}
+var cmd *Command
+cmd, err = shell.Execute("cmd.exe")
+if err != nil {
+  fmt.Printf("Impossible to create Command %s\n", err)
+  os.Exit(1)
+}
+
+go io.Copy(cmd.Stdin, &stdin)
+go io.Copy(os.Stdout, cmd.Stdout)
+go io.Copy(os.Stderr, cmd.Stderr)
+
+cmd.Wait()
+shell.Close()
+```
+
+Using CertAuth:
+```go
+import (
+  "github.com/masterzen/winrm/winrm"
+  "fmt"
+  "bytes"
+  "os"
+)
+
+stdin := bytes.NewBufferString("ipconfig /all")
+
+certBytes := []byte(`CERTIFICATE`)
+
+keyBytes := []byte(`KEY`)
+
+client, err := winrm.NewClient(&winrm.Endpoint{Host: "localhost", Port: 5986, HTTPS: true, Insecure: true, Cert: certBytes, Key: keyBytes}, "", "", winrm.CertAuth)
 shell, err := client.CreateShell()
 if err != nil {
   fmt.Printf("Impossible to create shell %s\n", err)
