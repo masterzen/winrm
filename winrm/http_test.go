@@ -53,7 +53,7 @@ func (s *WinRMSuite) TestHttpRequest(c *C) {
 	ts.Start()
 	defer ts.Close()
 
-	client, err := NewClient(&Endpoint{Host: "localhost", Port: 5985}, "test", "test", BasicAuth)
+	client, err := NewClient(&Endpoint{Host: "localhost", Port: 5985}, "test", "test")
 	c.Assert(err, IsNil)
 	shell, err := client.CreateShell()
 	if err != nil {
@@ -75,7 +75,7 @@ func (s *WinRMSuite) TestHttpRequestCertAuth(c *C) {
 	ts.StartTLS()
 	defer ts.Close()
 
-	client, err := NewClient(&Endpoint{Host: "localhost", Port: 5986, HTTPS: true, Insecure: true, Cert: &certBytes, Key: &keyBytes}, "", "", CertAuth)
+	client, err := NewClient(&Endpoint{Host: "localhost", Port: 5986, HTTPS: true, Insecure: true, Cert: &certBytes, Key: &keyBytes}, "", "")
 	c.Assert(err, IsNil)
 	shell, err := client.CreateShell()
 	if err != nil {

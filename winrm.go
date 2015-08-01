@@ -37,7 +37,6 @@ func main() {
 		cacert   string
 		cert     string
 		key      string
-		auth     string
 	)
 
 	flag.StringVar(&hostname, "hostname", "localhost", "winrm host")
@@ -49,7 +48,6 @@ func main() {
 	flag.StringVar(&cacert, "cacert", "", "CA certificate to use")
 	flag.StringVar(&cert, "cert", "", "Cert")
 	flag.StringVar(&key, "key", "", "Key")
-	flag.StringVar(&auth, "authtype", "basic", "Auth Type")
 
 	flag.Parse()
 
@@ -84,7 +82,7 @@ func main() {
 	}
 
 	cmd = flag.Arg(0)
-	client, err := winrm.NewClient(&winrm.Endpoint{Host: hostname, Port: port, HTTPS: https, Insecure: insecure, CACert: &CAcertBytes, Cert: &certBytes, Key: &keyBytes}, user, pass, winrm.AuthType(auth))
+	client, err := winrm.NewClient(&winrm.Endpoint{Host: hostname, Port: port, HTTPS: https, Insecure: insecure, CACert: &CAcertBytes, Cert: &certBytes, Key: &keyBytes}, user, pass)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)

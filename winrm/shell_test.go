@@ -6,7 +6,7 @@ import (
 )
 
 func (s *WinRMSuite) TestShellExecuteResponse(c *C) {
-	client, err := NewClient(&Endpoint{Host: "localhost", Port: 5985}, "Administrator", "v3r1S3cre7", BasicAuth)
+	client, err := NewClient(&Endpoint{Host: "localhost", Port: 5985}, "Administrator", "v3r1S3cre7")
 	c.Assert(err, IsNil)
 
 	shell := &Shell{client: client, ShellId: "67A74734-DD32-4F10-89DE-49A060483810"}
@@ -27,7 +27,7 @@ func (s *WinRMSuite) TestShellExecuteResponse(c *C) {
 }
 
 func (s *WinRMSuite) TestShellCloseResponse(c *C) {
-	client, err := NewClient(&Endpoint{Host: "localhost", Port: 5985}, "Administrator", "v3r1S3cre7", BasicAuth)
+	client, err := NewClient(&Endpoint{Host: "localhost", Port: 5985}, "Administrator", "v3r1S3cre7")
 	c.Assert(err, IsNil)
 
 	shell := &Shell{client: client, ShellId: "67A74734-DD32-4F10-89DE-49A060483810"}

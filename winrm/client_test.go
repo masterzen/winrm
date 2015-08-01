@@ -63,19 +63,18 @@ var keyBytes = []byte(key)
 var certBytes = []byte(cert)
 
 func (s *WinRMSuite) TestNewClient(c *C) {
-	client, err := NewClient(&Endpoint{Host: "localhost", Port: 5985}, "Administrator", "v3r1S3cre7", BasicAuth)
+	client, err := NewClient(&Endpoint{Host: "localhost", Port: 5985}, "Administrator", "v3r1S3cre7")
 
 	c.Assert(err, IsNil)
 	c.Assert(client.url, Equals, "http://localhost:5985/wsman")
 	c.Assert(client.username, Equals, "Administrator")
 	c.Assert(client.password, Equals, "v3r1S3cre7")
-	c.Assert(client.authtype, Equals, BasicAuth)
 }
 
 func (s *WinRMSuite) TestNewClientInvalidTransport(c *C) {
-	_, err := NewClient(&Endpoint{Host: "localhost", Port: 5985}, "", "", "Auth")
+	_, err := NewClient(&Endpoint{Host: "localhost", Port: 5985}, "", "")
 
-	c.Assert(err, ErrorMatches, "Invalid transport type: Auth")
+	c.Assert(err, ErrorMatches, "Invalid transport type")
 }
 
 func (s *WinRMSuite) TestNewClientBasicAuthNoUserAndPassword(c *C) {
@@ -89,21 +88,20 @@ func (s *WinRMSuite) TestNewClientBasicAuthNoUserAndPassword(c *C) {
 	}
 
 	for _, k := range basicAuthTests {
-		_, err := NewClient(&Endpoint{Host: "localhost", Port: 5985}, k.username, k.password, BasicAuth)
+		_, err := NewClient(&Endpoint{Host: "localhost", Port: 5985}, k.username, k.password)
 
-		c.Assert(err, ErrorMatches, "BasicAuth needs username and password")
+		c.Assert(err, ErrorMatches, "Invalid transport type")
 	}
 }
 
 func (s *WinRMSuite) TestNewClientCertAuth(c *C) {
-	client, err := NewClient(&Endpoint{Host: "localhost", Port: 5986, HTTPS: true, Cert: &certBytes, Key: &keyBytes}, "", "", CertAuth)
+	client, err := NewClient(&Endpoint{Host: "localhost", Port: 5986, HTTPS: true, Cert: &certBytes, Key: &keyBytes}, "", "")
 
 	c.Assert(err, IsNil)
 	c.Assert(client.url, Equals, "https://localhost:5986/wsman")
 	c.Assert(client.username, Equals, "")
 	c.Assert(client.password, Equals, "")
 	c.Assert(client.useHTTPS, Equals, true)
-	c.Assert(client.authtype, Equals, CertAuth)
 
 	transport := client.transport.TLSClientConfig.Certificates
 
@@ -118,38 +116,20 @@ func (s *WinRMSuite) TestNewClientCertAuth(c *C) {
 }
 
 func (s *WinRMSuite) TestNewClientCertAuthInvalidProtocol(c *C) {
-	_, err := NewClient(&Endpoint{Host: "localhost", Port: 5986, HTTPS: false, Cert: &certBytes, Key: &keyBytes}, "", "", CertAuth)
+	_, err := NewClient(&Endpoint{Host: "localhost", Port: 5986, HTTPS: false, Cert: &certBytes, Key: &keyBytes}, "", "")
 
 	c.Assert(err, ErrorMatches, "Invalid protocol for this transport type \\(CertAuth\\). Expected https")
 }
 
-func (s *WinRMSuite) TestNewClientCertAuthEmptyCertAndKeyFailure(c *C) {
-	fake := []byte("Fakeinput")
-	var certAuthTests = []struct {
-		cert *[]byte
-		key  *[]byte
-	}{
-		{nil, nil},
-		{&fake, nil},
-		{nil, &fake},
-	}
-
-	for _, k := range certAuthTests {
-		_, err := NewClient(&Endpoint{Host: "localhost", Port: 5986, HTTPS: true, Cert: k.cert, Key: k.key}, "", "", CertAuth)
-
-		c.Assert(err, ErrorMatches, "CertAuth needs certificate and key")
-	}
-}
-
 func (s *WinRMSuite) TestNewClientCertAuthParseKeyPairFailure(c *C) {
 	invalid_key := []byte("AAA")
-	_, err := NewClient(&Endpoint{Host: "localhost", Port: 5986, HTTPS: true, Cert: &certBytes, Key: &invalid_key}, "", "", CertAuth)
+	_, err := NewClient(&Endpoint{Host: "localhost", Port: 5986, HTTPS: true, Cert: &certBytes, Key: &invalid_key}, "", "")
 
 	c.Assert(err, ErrorMatches, "Error parsing keypair: crypto/tls: failed to parse key PEM data")
 }
 
 func (s *WinRMSuite) TestClientCreateShell(c *C) {
-	client, err := NewClient(&Endpoint{Host: "localhost", Port: 5985}, "Administrator", "v3r1S3cre7", BasicAuth)
+	client, err := NewClient(&Endpoint{Host: "localhost", Port: 5985}, "Administrator", "v3r1S3cre7")
 	c.Assert(err, IsNil)
 	client.http = func(client *Client, message *soap.SoapMessage) (string, error) {
 		c.Assert(message.String(), Contains, "http://schemas.xmlsoap.org/ws/2004/09/transfer/Create")
@@ -162,7 +142,7 @@ func (s *WinRMSuite) TestClientCreateShell(c *C) {
 }
 
 func (s *WinRMSuite) TestClientCreateShellCertAuth(c *C) {
-	client, err := NewClient(&Endpoint{Host: "localhost", Port: 5986, HTTPS: true, Cert: &certBytes, Key: &keyBytes}, "", "", CertAuth)
+	client, err := NewClient(&Endpoint{Host: "localhost", Port: 5986, HTTPS: true, Cert: &certBytes, Key: &keyBytes}, "", "")
 	c.Assert(err, IsNil)
 	client.http = func(client *Client, message *soap.SoapMessage) (string, error) {
 		c.Assert(message.String(), Contains, "http://schemas.xmlsoap.org/ws/2004/09/transfer/Create")

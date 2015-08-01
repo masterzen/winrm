@@ -81,7 +81,7 @@ For the fast version (this doesn't allow to send input to the command):
 ```go
 import "github.com/masterzen/winrm/winrm"
 
-client := winrm.NewClient("localhost", "Administrator", "secret", winrm.BasicAuth)
+client := winrm.NewClient("localhost", "Administrator", "secret")
 client.Run("ipconfig /all", os.Stdout, os.Stderr)
 ```
 
@@ -89,7 +89,7 @@ or
 ```go
 import "github.com/masterzen/winrm/winrm"
 
-client := winrm.NewClient("localhost", "Administrator", "secret", winrm.BasicAuth)
+client := winrm.NewClient("localhost", "Administrator", "secret")
 stdout, stderr, _ := client.RunWithString("ipconfig /all", "")
 println(stdout)
 println(stderr)
@@ -108,7 +108,7 @@ import (
 
 stdin := bytes.NewBufferString("ipconfig /all")
 
-client := winrm.NewClient("localhost", "Administrator", "secret", winrm.BasicAuth)
+client := winrm.NewClient("localhost", "Administrator", "secret")
 shell, err := client.CreateShell()
 if err != nil {
   fmt.Printf("Impossible to create shell %s\n", err)
@@ -144,7 +144,7 @@ certBytes := []byte(`CERTIFICATE`)
 
 keyBytes := []byte(`KEY`)
 
-client, err := winrm.NewClient(&winrm.Endpoint{Host: "localhost", Port: 5986, HTTPS: true, Insecure: true, Cert: certBytes, Key: keyBytes}, "", "", winrm.CertAuth)
+client, err := winrm.NewClient(&winrm.Endpoint{Host: "localhost", Port: 5986, HTTPS: true, Insecure: true, Cert: certBytes, Key: keyBytes}, "", "")
 shell, err := client.CreateShell()
 if err != nil {
   fmt.Printf("Impossible to create shell %s\n", err)
