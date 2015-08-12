@@ -131,23 +131,47 @@ func (client *Client) check() (exitCode int, err error) {
 	return
 }
 
+// Check if we need to return an ExitCode
+func (client *Client) ExitCode(cmd *Command) (exitCode int) {
+	if cmd != nil {
+		if cmd.ExitCode() != 0 {
+			return cmd.exitCode
+		}
+	}
+	exitCode, _ = client.check()
+	return exitCode
+}
+
+// Check if we need to return an Error Message
+func (client *Client) Error(cmd *Command) (err error) {
+	if cmd != nil {
+		if cmd.err != nil {
+			return cmd.err
+		}
+	}
+	_, err = client.check()
+	return err
+}
+
 // Run will run command on the the remote host, writing the process stdout and stderr to
 // the given writers. Note with this method it isn't possible to inject stdin.
 func (client *Client) Run(command string, stdout io.Writer, stderr io.Writer) (exitCode int, err error) {
 	shell, err := client.CreateShell()
 	if err != nil {
-		return 0, err
+		return 1, err
 	}
+	defer shell.Close()
+
 	var cmd *Command
 	cmd, err = shell.Execute(command)
 	if err != nil {
-		return 0, err
+		return 1, err
 	}
-	defer shell.Close()
 	go io.Copy(stdout, cmd.Stdout)
 	go io.Copy(stderr, cmd.Stderr)
 	cmd.Wait()
-	return cmd.ExitCode(), cmd.err
+
+	return client.ExitCode(cmd), client.Error(cmd)
 }
 
 // Run will run command on the the remote host, returning the process stdout and stderr
@@ -155,22 +179,25 @@ func (client *Client) Run(command string, stdout io.Writer, stderr io.Writer) (e
 func (client *Client) RunWithString(command string, stdin string) (stdout string, stderr string, exitCode int, err error) {
 	shell, err := client.CreateShell()
 	if err != nil {
-		return "", "", 0, err
+		return "", "", 1, err
 	}
 	defer shell.Close()
+
 	var cmd *Command
 	cmd, err = shell.Execute(command)
 	if err != nil {
-		return "", "", 0, err
+		return "", "", 1, err
 	}
 	if len(stdin) > 0 {
 		cmd.Stdin.Write([]byte(stdin))
 	}
 	var outWriter, errWriter bytes.Buffer
+
 	go io.Copy(&outWriter, cmd.Stdout)
 	go io.Copy(&errWriter, cmd.Stderr)
 	cmd.Wait()
-	return outWriter.String(), errWriter.String(), cmd.ExitCode(), cmd.err
+
+	return outWriter.String(), errWriter.String(), client.ExitCode(cmd), client.Error(cmd)
 }
 
 // Run will run command on the the remote host, writing the process stdout and stderr to
@@ -181,17 +208,19 @@ func (client *Client) RunWithString(command string, stdin string) (stdout string
 func (client *Client) RunWithInput(command string, stdout io.Writer, stderr io.Writer, stdin io.Reader) (exitCode int, err error) {
 	shell, err := client.CreateShell()
 	if err != nil {
-		return 0, err
+		return 1, err
 	}
 	defer shell.Close()
+
 	var cmd *Command
 	cmd, err = shell.Execute(command)
 	if err != nil {
-		return 0, err
+		return 1, err
 	}
 	go io.Copy(cmd.Stdin, stdin)
 	go io.Copy(stdout, cmd.Stdout)
 	go io.Copy(stderr, cmd.Stderr)
 	cmd.Wait()
-	return cmd.ExitCode(), cmd.err
+
+	return client.ExitCode(cmd), client.Error(cmd)
 }
