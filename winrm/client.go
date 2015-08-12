@@ -143,10 +143,10 @@ func (client *Client) Run(command string, stdout io.Writer, stderr io.Writer) (e
 	if err != nil {
 		return 0, err
 	}
+	defer shell.Close()
 	go io.Copy(stdout, cmd.Stdout)
 	go io.Copy(stderr, cmd.Stderr)
 	cmd.Wait()
-	shell.Close()
 	return cmd.ExitCode(), cmd.err
 }
 
