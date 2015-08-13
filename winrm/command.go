@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"io"
-	"strings"
 )
 
 type commandWriter struct {
@@ -37,7 +36,7 @@ type Command struct {
 }
 
 func newCommand(shell *Shell, commandId string) *Command {
-	command := &Command{shell: shell, client: shell.client, commandId: commandId, exitCode: 1, err: nil, done: make(chan bool)}
+	command := &Command{shell: shell, client: shell.client, commandId: commandId, exitCode: 0, err: nil, done: make(chan bool)}
 	command.Stdin = &commandWriter{Command: command, eof: false}
 	command.Stdout = newCommandReader("stdout", command)
 	command.Stderr = newCommandReader("stderr", command)
@@ -78,6 +77,9 @@ func (command *Command) check() (err error) {
 	if command.client == nil {
 		return errors.New("Command has no associated client")
 	}
+	if _, err := command.client.check(); err != nil {
+		return errors.New("WinRM client has an error: " + err.Error())
+	}
 	return
 }
 
@@ -106,11 +108,6 @@ func (command *Command) slurpAllOutput() (finished bool, err error) {
 
 	response, err := command.client.sendRequest(request)
 	if err != nil {
-		if strings.Contains(err.Error(), "OperationTimeout") {
-			// Operation timeout because there was no command output
-			return
-		}
-
 		command.Stderr.write.CloseWithError(err)
 		command.Stdout.write.CloseWithError(err)
 		return true, err

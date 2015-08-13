@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/masterzen/winrm/soap"
 )
@@ -17,8 +18,20 @@ type Client struct {
 	password  string
 	useHTTPS  bool
 	url       string
+	err       error
 	http      HttpPost
 	transport *http.Transport
+}
+
+// Map of known terminating errors, this will be utilized for returning error codes and error messages on
+// fatal errors
+var errorCode = map[string]int{
+	"errorEOF":     16000,
+	"errorTimeOut": 16001,
+}
+var errorMessage = map[string]string{
+	"errorEOF":     "A connection terminated unexpectedly, error while sending request to endpoint:",
+	"errorTimeOut": "Operation timeout because there was no command output:",
 }
 
 // NewClient will create a new remote client on url, connecting with user and password
@@ -42,6 +55,7 @@ func NewClientWithParameters(endpoint *Endpoint, user, password string, params *
 		http:       Http_post,
 		useHTTPS:   endpoint.HTTPS,
 		transport:  transport,
+		err:        nil,
 	}
 	return
 }
@@ -93,7 +107,50 @@ func (client *Client) CreateShell() (shell *Shell, err error) {
 }
 
 func (client *Client) sendRequest(request *soap.SoapMessage) (response string, err error) {
+	if errorCode, err := client.check(); errorCode != 0 {
+		return "", err
+	}
 	return client.http(client, request)
+}
+
+// Use this function to map any know terminating errors to exitcodes and messages
+func (client *Client) check() (exitCode int, err error) {
+	if client.err != nil {
+		if strings.Contains(client.err.Error(), "/wsman: EOF") {
+			err = fmt.Errorf("%v %s", errorMessage["errorEOF"], client.err)
+			exitCode = errorCode["errorEOF"]
+			return
+		}
+		if strings.Contains(client.err.Error(), "OperationTimeout") {
+			err = fmt.Errorf("%v %s", errorMessage["errorTimeOut"], client.err)
+			exitCode = errorCode["errorTimeOut"]
+			return
+		}
+	}
+
+	return
+}
+
+// Check if we need to return an ExitCode
+func (client *Client) ExitCode(cmd *Command) (exitCode int) {
+	if cmd != nil {
+		if cmd.ExitCode() != 0 {
+			return cmd.exitCode
+		}
+	}
+	exitCode, _ = client.check()
+	return exitCode
+}
+
+// Check if we need to return an Error Message
+func (client *Client) Error(cmd *Command) (err error) {
+	if cmd != nil {
+		if cmd.err != nil {
+			return cmd.err
+		}
+	}
+	_, err = client.check()
+	return err
 }
 
 // Run will run command on the the remote host, writing the process stdout and stderr to
@@ -101,18 +158,20 @@ func (client *Client) sendRequest(request *soap.SoapMessage) (response string, e
 func (client *Client) Run(command string, stdout io.Writer, stderr io.Writer) (exitCode int, err error) {
 	shell, err := client.CreateShell()
 	if err != nil {
-		return 0, err
+		return 1, err
 	}
+	defer shell.Close()
+
 	var cmd *Command
 	cmd, err = shell.Execute(command)
 	if err != nil {
-		return 0, err
+		return 1, err
 	}
 	go io.Copy(stdout, cmd.Stdout)
 	go io.Copy(stderr, cmd.Stderr)
 	cmd.Wait()
-	shell.Close()
-	return cmd.ExitCode(), cmd.err
+
+	return client.ExitCode(cmd), client.Error(cmd)
 }
 
 // Run will run command on the the remote host, returning the process stdout and stderr
@@ -120,22 +179,25 @@ func (client *Client) Run(command string, stdout io.Writer, stderr io.Writer) (e
 func (client *Client) RunWithString(command string, stdin string) (stdout string, stderr string, exitCode int, err error) {
 	shell, err := client.CreateShell()
 	if err != nil {
-		return "", "", 0, err
+		return "", "", 1, err
 	}
 	defer shell.Close()
+
 	var cmd *Command
 	cmd, err = shell.Execute(command)
 	if err != nil {
-		return "", "", 0, err
+		return "", "", 1, err
 	}
 	if len(stdin) > 0 {
 		cmd.Stdin.Write([]byte(stdin))
 	}
 	var outWriter, errWriter bytes.Buffer
+
 	go io.Copy(&outWriter, cmd.Stdout)
 	go io.Copy(&errWriter, cmd.Stderr)
 	cmd.Wait()
-	return outWriter.String(), errWriter.String(), cmd.ExitCode(), cmd.err
+
+	return outWriter.String(), errWriter.String(), client.ExitCode(cmd), client.Error(cmd)
 }
 
 // Run will run command on the the remote host, writing the process stdout and stderr to
@@ -146,17 +208,19 @@ func (client *Client) RunWithString(command string, stdin string) (stdout string
 func (client *Client) RunWithInput(command string, stdout io.Writer, stderr io.Writer, stdin io.Reader) (exitCode int, err error) {
 	shell, err := client.CreateShell()
 	if err != nil {
-		return 0, err
+		return 1, err
 	}
 	defer shell.Close()
+
 	var cmd *Command
 	cmd, err = shell.Execute(command)
 	if err != nil {
-		return 0, err
+		return 1, err
 	}
 	go io.Copy(cmd.Stdin, stdin)
 	go io.Copy(stdout, cmd.Stdout)
 	go io.Copy(stderr, cmd.Stderr)
 	cmd.Wait()
-	return cmd.ExitCode(), cmd.err
+
+	return client.ExitCode(cmd), client.Error(cmd)
 }

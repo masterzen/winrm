@@ -18,7 +18,6 @@ func body(response *http.Response) (content string, err error) {
 	if strings.HasPrefix(contentType, soapXML) {
 		var body []byte
 		body, err = ioutil.ReadAll(response.Body)
-		response.Body.Close()
 		if err != nil {
 			err = fmt.Errorf("error while reading request body %s", err)
 			return
@@ -38,21 +37,23 @@ func Http_post(client *Client, request *soap.SoapMessage) (response string, err 
 
 	req, err := http.NewRequest("POST", client.url, strings.NewReader(request.String()))
 	if err != nil {
+		client.err = err
 		err = fmt.Errorf("impossible to create http request %s", err)
 		return
 	}
 	req.Header.Set("Content-Type", soapXML+";charset=UTF-8")
 	req.SetBasicAuth(client.username, client.password)
+	req.Close = true
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		err = fmt.Errorf("unknown error %s", err)
+		client.err = err
+		err = fmt.Errorf("error while sending request to endpoint %s", err)
 		return
 	}
+	defer resp.Body.Close()
 
-	if resp.StatusCode == 200 {
-		response, err = body(resp)
-	} else {
-		body, _ := ioutil.ReadAll(resp.Body)
+	response, err = body(resp)
+	if resp.StatusCode != 200 && err == nil {
 		err = fmt.Errorf("http error: %d - %s", resp.StatusCode, body)
 	}
 
