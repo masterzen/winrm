@@ -152,8 +152,8 @@ if err != nil {
 certificate := mycert.ExportPem()
 private_key := mycert.ExportKey()
 
-fmt.Printf("Certificate:\n%s\n\n", certificate)
-fmt.Printf("Private Key:\n%s\n", private_key)
+fmt.Printf("Certificate:\n%s\n\n", string(certificate))
+fmt.Printf("Private Key:\n%s\n", string(private_key))
 ```
 
 ## Developing on WinRM

@@ -158,14 +158,10 @@ func NewWinrmClientCertificate(subject pkix.Name, validFrom time.Time, validFor 
 	return s, nil
 }
 
-func (s *WinrmClientCert) ExportPem() string {
-	cert := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: s.Cert})
-
-	return string(cert)
+func (s *WinrmClientCert) ExportPem() []byte {
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: s.Cert})
 }
 
-func (s *WinrmClientCert) ExportKey() string {
-	key := pem.EncodeToMemory(pemBlockForKey(s.Priv))
-
-	return string(key)
+func (s *WinrmClientCert) ExportKey() []byte {
+	return pem.EncodeToMemory(pemBlockForKey(s.Priv))
 }
