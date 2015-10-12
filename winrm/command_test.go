@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"strings"
+	"sync"
 
 	"github.com/masterzen/winrm/soap"
 	. "gopkg.in/check.v1"
@@ -38,9 +39,16 @@ func (s *WinRMSuite) TestExecuteCommand(c *C) {
 
 	command, _ := shell.Execute("ipconfig /all")
 	var stdout, stderr bytes.Buffer
-	go io.Copy(&stdout, command.Stdout)
-	go io.Copy(&stderr, command.Stderr)
+	var wg sync.WaitGroup
+	f := func(b *bytes.Buffer, r *commandReader) {
+		wg.Add(1)
+		defer wg.Done()
+		io.Copy(b, r)
+	}
+	go f(&stdout, command.Stdout)
+	go f(&stderr, command.Stderr)
 	command.Wait()
+	wg.Wait()
 	c.Assert(stdout.String(), Equals, "That's all folks!!!")
 	c.Assert(stderr.String(), Equals, "This is stderr, I'm pretty sure!")
 }
