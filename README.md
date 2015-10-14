@@ -122,6 +122,40 @@ cmd.Wait()
 shell.Close()
 ```
 
+## Generate Client Certificate Authentication for WinRM
+
+For the fast version:
+
+```go
+import (
+  "crypto/x509/pkix"
+  "fmt"
+  "time"
+
+  "github.com/masterzen/winrm/winrm"
+)
+
+Subject := pkix.Name{ CommonName: "example@Example" }
+
+notBefore := time.Now()
+validFor := 365*24*time.Hour
+ecdsaCurve := ""
+rsaBits := 2048
+
+mycert, err := winrm.NewWinrmClientCertificate(Subject, notBefore, validFor, rsaBits, winrm.EcdsaCurve(ecdsaCurve))
+
+if err != nil {
+  fmt.Println("Error: ", err)
+  return
+}
+
+certificate := mycert.ExportPem()
+private_key := mycert.ExportKey()
+
+fmt.Printf("Certificate:\n%s\n\n", string(certificate))
+fmt.Printf("Private Key:\n%s\n", string(private_key))
+```
+
 ## Developing on WinRM
 
 If you wish to work on `winrm` itself, you'll first need [Go](http://golang.org)
