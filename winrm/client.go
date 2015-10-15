@@ -2,11 +2,12 @@ package winrm
 
 import (
 	"bytes"
-	"crypto/tls"
 	"crypto/x509"
 	"fmt"
 	"io"
-	"net/http"
+
+	"launchpad.net/gwacl/fork/http"
+	"launchpad.net/gwacl/fork/tls"
 
 	"github.com/masterzen/winrm/soap"
 )
@@ -32,6 +33,21 @@ func NewClient(endpoint *Endpoint, user, password string) (client *Client, err e
 // NewClient will create a new remote client on url, connecting with user and password
 // This function doesn't connect (connection happens only when CreateShell is called)
 func NewClientWithParameters(endpoint *Endpoint, user, password string, params *Parameters) (client *Client, err error) {
+	ok := false
+
+	if isSetCertAndPrivateKey(endpoint.Cert, endpoint.Key) {
+		if endpoint.HTTPS == false {
+			return nil, fmt.Errorf("Invalid protocol for this transport type (CertAuth). Expected https")
+		}
+		ok = true
+	} else if user != "" && password != "" {
+		ok = true
+	}
+
+	if ok == false {
+		return nil, fmt.Errorf("Invalid transport type")
+	}
+
 	transport, err := newTransport(endpoint)
 
 	client = &Client{
@@ -63,7 +79,24 @@ func newTransport(endpoint *Endpoint) (*http.Transport, error) {
 		transport.TLSClientConfig.RootCAs = certPool
 	}
 
+	if isSetCertAndPrivateKey(endpoint.Cert, endpoint.Key) {
+		certPool, err := tls.X509KeyPair(*endpoint.Cert, *endpoint.Key)
+		if err != nil {
+			return nil, fmt.Errorf("Error parsing keypair: %s", err)
+		}
+
+		transport.TLSClientConfig.Certificates = []tls.Certificate{certPool}
+	}
+
 	return transport, nil
+}
+
+func isSetCertAndPrivateKey(cert *[]byte, key *[]byte) bool {
+	if cert != nil && key != nil && len(*cert) > 0 && len(*key) > 0 {
+		return true
+	}
+
+	return false
 }
 
 func readCACerts(certs *[]byte) (*x509.CertPool, error) {

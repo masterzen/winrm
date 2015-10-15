@@ -3,8 +3,9 @@ package winrm
 import (
 	"fmt"
 	"io/ioutil"
-	"net/http"
 	"strings"
+
+	"launchpad.net/gwacl/fork/http"
 
 	"github.com/masterzen/winrm/soap"
 )
@@ -42,7 +43,23 @@ func Http_post(client *Client, request *soap.SoapMessage) (response string, err 
 		return
 	}
 	req.Header.Set("Content-Type", soapXML+";charset=UTF-8")
-	req.SetBasicAuth(client.username, client.password)
+
+	ok := false
+
+	transport := client.transport
+	if transport.TLSClientConfig.Certificates != nil {
+		req.Header.Add("Authorization", "http://schemas.dmtf.org/wbem/wsman/1/wsman/secprofile/https/mutual")
+		ok = true
+	} else if client.username != "" && client.password != "" {
+		req.SetBasicAuth(client.username, client.password)
+		ok = true
+	}
+
+	if ok == false {
+		err = fmt.Errorf("Invalid transport type")
+		return
+	}
+
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		err = fmt.Errorf("unknown error %s", err)

@@ -61,3 +61,25 @@ func (s *WinRMSuite) TestHttpRequest(c *C) {
 	}
 	c.Assert(shell.ShellId, Equals, "67A74734-DD32-4F10-89DE-49A060483810")
 }
+
+func (s *WinRMSuite) TestHttpRequestCertAuth(c *C) {
+	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/soap+xml")
+		w.Write([]byte(response))
+	}))
+	l, err := net.Listen("tcp", "127.0.0.1:5986")
+	if err != nil {
+		c.Fatalf("Can't listen %s", err)
+	}
+	ts.Listener = l
+	ts.StartTLS()
+	defer ts.Close()
+
+	client, err := NewClient(&Endpoint{Host: "localhost", Port: 5986, HTTPS: true, Insecure: true, Cert: &certBytes, Key: &keyBytes}, "", "")
+	c.Assert(err, IsNil)
+	shell, err := client.CreateShell()
+	if err != nil {
+		c.Fatalf("Can't create shell %s", err)
+	}
+	c.Assert(shell.ShellId, Equals, "67A74734-DD32-4F10-89DE-49A060483810")
+}

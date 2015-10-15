@@ -35,6 +35,8 @@ func main() {
 		https    bool
 		insecure bool
 		cacert   string
+		cert     string
+		key      string
 	)
 
 	flag.StringVar(&hostname, "hostname", "localhost", "winrm host")
@@ -44,22 +46,43 @@ func main() {
 	flag.BoolVar(&https, "https", false, "use https")
 	flag.BoolVar(&insecure, "insecure", false, "skip SSL validation")
 	flag.StringVar(&cacert, "cacert", "", "CA certificate to use")
+	flag.StringVar(&cert, "cert", "", "Cert")
+	flag.StringVar(&key, "key", "", "Key")
+
 	flag.Parse()
 
-	var certBytes []byte
 	var err error
-	if cacert != "" {
-		certBytes, err = ioutil.ReadFile(cacert)
+	var certBytes, keyBytes []byte
+	if cert != "" && key != "" {
+		certBytes, err = ioutil.ReadFile(cert)
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+
+		keyBytes, err = ioutil.ReadFile(key)
 		if err != nil {
 			fmt.Println(err)
 			os.Exit(1)
 		}
 	} else {
 		certBytes = nil
+		keyBytes = nil
+	}
+
+	var CAcertBytes []byte
+	if cacert != "" {
+		CAcertBytes, err = ioutil.ReadFile(cacert)
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+	} else {
+		CAcertBytes = nil
 	}
 
 	cmd = flag.Arg(0)
-	client, err := winrm.NewClient(&winrm.Endpoint{Host: hostname, Port: port, HTTPS: https, Insecure: insecure, CACert: &certBytes}, user, pass)
+	client, err := winrm.NewClient(&winrm.Endpoint{Host: hostname, Port: port, HTTPS: https, Insecure: insecure, CACert: &CAcertBytes, Cert: &certBytes, Key: &keyBytes}, user, pass)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
