@@ -14,11 +14,10 @@ _Note_: this library doesn't support domain users (it doesn't support GSSAPI nor
 
 
 ## Getting Started
+WinRM is available on Windows Server 2008 and up. This project natively supports basic authentication for local accounts, see the steps in the next section on how to prepare the remote Windows machine for this scenario. The authentication model is pluggable, see below for an example on using Negotiate/NTLM authentication (e.g. for connecting to vanilla Azure VMs).
 
-### Preparing the remote windows machine
-
-WinRM is available on Windows Server 2008 and up. This project supports only basic authentication for local accounts (domain users are not supported).
-The remote windows system must be prepared for winrm:
+### Preparing the remote Windows machine for Basic authentication
+This project supports only basic authentication for local accounts (domain users are not supported). The remote windows system must be prepared for winrm:
 
 _For a PowerShell script to do what is described below in one go, check [Richard Downer's blog](http://www.frontiertown.co.uk/2011/12/overthere-control-windows-from-java/)_
 
@@ -120,6 +119,20 @@ go io.Copy(os.Stderr, cmd.Stderr)
 
 cmd.Wait()
 shell.Close()
+```
+
+### Pluggable authentication example: Negotiate/NTLM authentication
+Using the winrm.Parameters.TransportDecorator, it is possible to wrap or completely replace the outgoing http.RoundTripper. For example, use github.com/paulmey/go-ntlmssp to plug in Negotiate/NTLM authentication :
+
+```go
+import (
+  "github.com/masterzen/winrm/winrm"
+  "github.com/paulmey/go-ntlmssp"
+)
+
+params := winrm.DefaultParameters()
+params.TransportDecorator = func(t *http.Transport) http.RoundTripper { return ntlmssp.Negotiator{t} }
+client, err := winrm.NewClientWithParameters(..., params)
 ```
 
 ## Developing on WinRM
