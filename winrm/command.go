@@ -33,11 +33,11 @@ type Command struct {
 	Stdout *commandReader
 	Stderr *commandReader
 
-	done chan bool
+	done chan struct{}
 }
 
 func newCommand(shell *Shell, commandId string) *Command {
-	command := &Command{shell: shell, client: shell.client, commandId: commandId, exitCode: 1, err: nil, done: make(chan bool)}
+	command := &Command{shell: shell, client: shell.client, commandId: commandId, exitCode: 1, err: nil, done: make(chan struct{})}
 	command.Stdin = &commandWriter{Command: command, eof: false}
 	command.Stdout = newCommandReader("stdout", command)
 	command.Stderr = newCommandReader("stderr", command)
@@ -54,16 +54,11 @@ func newCommandReader(stream string, command *Command) *commandReader {
 
 func fetchOutput(command *Command) {
 	for {
-		select {
-		case <-command.done:
-			break
-		default:
-			finished, err := command.slurpAllOutput()
-			if finished {
-				command.err = err
-				command.done <- true
-				break
-			}
+		finished, err := command.slurpAllOutput()
+		if finished {
+			command.err = err
+			close(command.done)
+			return
 		}
 	}
 }
