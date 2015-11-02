@@ -33,11 +33,12 @@ type Command struct {
 	Stdout *commandReader
 	Stderr *commandReader
 
-	done chan struct{}
+	done   chan struct{}
+	cancel chan struct{}
 }
 
 func newCommand(shell *Shell, commandId string) *Command {
-	command := &Command{shell: shell, client: shell.client, commandId: commandId, exitCode: 1, err: nil, done: make(chan struct{})}
+	command := &Command{shell: shell, client: shell.client, commandId: commandId, exitCode: 1, err: nil, done: make(chan struct{}), cancel: make(chan struct{})}
 	command.Stdin = &commandWriter{Command: command, eof: false}
 	command.Stdout = newCommandReader("stdout", command)
 	command.Stderr = newCommandReader("stderr", command)
@@ -54,11 +55,17 @@ func newCommandReader(stream string, command *Command) *commandReader {
 
 func fetchOutput(command *Command) {
 	for {
-		finished, err := command.slurpAllOutput()
-		if finished {
-			command.err = err
+		select {
+		case <-command.cancel:
 			close(command.done)
 			return
+		default:
+			finished, err := command.slurpAllOutput()
+			if finished {
+				command.err = err
+				close(command.done)
+				return
+			}
 		}
 	}
 }
@@ -80,6 +87,12 @@ func (command *Command) check() (err error) {
 func (command *Command) Close() (err error) {
 	if err = command.check(); err != nil {
 		return err
+	}
+
+	select { // close cancel channel if it's still open
+	case <-command.cancel:
+	default:
+		close(command.cancel)
 	}
 
 	request := NewSignalRequest(command.client.url, command.shell.ShellId, command.commandId, &command.client.Parameters)
