@@ -74,7 +74,7 @@ For the fast version (this doesn't allow to send input to the command):
 ```go
 import "github.com/masterzen/winrm/winrm"
 
-client := winrm.NewClient("localhost", "Administrator", "secret")
+client := winrm.NewClient(&winrm.Endpoint{Host: "localhost", Port: 5985, HTTPS: false, Insecure: false}, "Administrator", "secret")
 client.Run("ipconfig /all", os.Stdout, os.Stderr)
 ```
 
