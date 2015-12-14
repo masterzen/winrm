@@ -32,7 +32,7 @@ On the remote host, open a Command Prompt (not a PowerShell prompt!) using the _
 __N.B.:__ The Windows Firewall needs to be running to run this command. See [Microsoft Knowledge Base article #2004640](http://support.microsoft.com/kb/2004640).
 
 __N.B.:__ Do not disable Negotiate authentication as the `winrm` command itself uses this for internal authentication, and you risk getting a system where `winrm` doesn't work anymore.
-	
+
 __N.B.:__ The `MaxMemoryPerShellMB` option has no effects on some Windows 2008R2 systems because of a WinRM bug. Make sure to install the hotfix described [Microsoft Knowledge Base article #2842230](http://support.microsoft.com/kb/2842230) if you need to run commands that uses more than 150MB of memory.
 
 For more information on WinRM, please refer to <a href="http://msdn.microsoft.com/en-us/library/windows/desktop/aa384426(v=vs.85).aspx">the online documentation at Microsoft's DevCenter</a>.
@@ -62,7 +62,7 @@ go version
 Once built, you can run remote commands like this:
 
 ```sh
-./winrm -hostname remote.domain.com -username "Administrator" -password "secret" "ipconfig /all" 
+./winrm -hostname remote.domain.com -username "Administrator" -password "secret" "ipconfig /all"
 ```
 
 ## Library Usage
@@ -74,18 +74,29 @@ For the fast version (this doesn't allow to send input to the command):
 ```go
 import "github.com/masterzen/winrm/winrm"
 
-client := winrm.NewClient("localhost", "Administrator", "secret")
+client := winrm.NewClient(&winrm.Endpoint{Host: "localhost", Port: 5985, HTTPS: false, Insecure: false}, "Administrator", "secret")
 client.Run("ipconfig /all", os.Stdout, os.Stderr)
 ```
 
 or
 ```go
-import "github.com/masterzen/winrm/winrm"
+import (
+  "github.com/masterzen/winrm/winrm"
+  "fmt"
+  "os"
+)
 
-client := winrm.NewClient("localhost", "Administrator", "secret")
-stdout, stderr, _ := client.RunWithString("ipconfig /all", "")
-println(stdout)
-println(stderr)
+client, err := winrm.NewClient(&winrm.Endpoint{Host: "localhost", Port: 5985, HTTPS: false, Insecure: false}, "Administrator", "secret")
+if err != nil {
+	fmt.Println(err)
+}
+
+run, err := client.RunWithInput("ipconfig /all", os.Stdout, os.Stderr, os.Stdin)
+if err != nil {
+	fmt.Println(err)
+}
+
+fmt.Println(run)
 ```
 
 For a more complex example, it is possible to call the various functions directly:
@@ -100,7 +111,7 @@ import (
 
 stdin := bytes.NewBufferString("ipconfig /all")
 
-client := winrm.NewClient("localhost", "Administrator", "secret")
+client := winrm.NewClient(&winrm.Endpoint{Host: "localhost", Port: 5985, HTTPS: false, Insecure: false}, "Administrator", "secret")
 shell, err := client.CreateShell()
 if err != nil {
   fmt.Printf("Impossible to create shell %s\n", err)
@@ -161,4 +172,3 @@ format the code according to Go standards.
 
 When new dependencies are added to winrm you can use `make updatedeps` to
 get the latest and subsequently use `make` to compile and generate the `winrm` binary.
-
