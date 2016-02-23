@@ -3,7 +3,7 @@ package winrm
 import (
 	"encoding/base64"
 	"fmt"
-	"github.com/masterzen/winrm/soap"
+	"github.com/jstrachan/winrm/soap"
 	"github.com/masterzen/xmlpath"
 	"io"
 	"strconv"

@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/masterzen/simplexml/dom"
-	"github.com/masterzen/winrm/soap"
+	"github.com/jstrachan/winrm/soap"
 	"github.com/masterzen/xmlpath"
 	. "gopkg.in/check.v1"
 )

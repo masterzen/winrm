@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/masterzen/winrm/soap"
+	"github.com/jstrachan/winrm/soap"
 )
 
 var soapXML string = "application/soap+xml"

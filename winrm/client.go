@@ -8,7 +8,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/masterzen/winrm/soap"
+	"github.com/jstrachan/winrm/soap"
 )
 
 type Client struct {
