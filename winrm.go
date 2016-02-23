@@ -22,7 +22,7 @@ import (
 	"io/ioutil"
 	"os"
 
-	"github.com/masterzen/winrm/winrm"
+	"github.com/jstrachan/winrm/winrm"
 )
 
 func main() {

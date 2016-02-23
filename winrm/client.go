@@ -8,7 +8,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/masterzen/winrm/soap"
+	"github.com/jstrachan/winrm/soap"
 )
 
 type Client struct {
@@ -94,6 +94,11 @@ func (client *Client) CreateShell() (shell *Shell, err error) {
 		}
 	}
 	return
+}
+
+// NewShell will create a new WinRM Shell for the given shellID
+func (client *Client) NewShell(shellID string) *Shell {
+	return &Shell{client: client, ShellId: shellID}
 }
 
 func (client *Client) sendRequest(request *soap.SoapMessage) (response string, err error) {
