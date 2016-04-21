@@ -74,7 +74,7 @@ For the fast version (this doesn't allow to send input to the command):
 ```go
 import "github.com/masterzen/winrm/winrm"
 
-client := winrm.NewClient("localhost", "Administrator", "secret")
+client ,_:= winrm.NewClient(&EndPoint{Host:"localhost",Port:5985,HTTPS:false,Insecure:false,CACert:nil}, "Administrator", "secret")
 client.Run("ipconfig /all", os.Stdout, os.Stderr)
 ```
 
@@ -86,17 +86,17 @@ import (
   "os"
 )
 
-client, err := winrm.NewClient(&winrm.Endpoint{Host: "localhost", Port: 5985, HTTPS: false, Insecure: false}, "Administrator", "secret")
+endpoint := NewEndpoint("localhost",5985,false,false,nil)
+client, err := winrm.NewClient(endpoint,"Administrator", "secret")
 if err != nil {
-	fmt.Println(err)
+	panic(err)
 }
 
-run, err := client.RunWithInput("ipconfig /all", os.Stdout, os.Stderr, os.Stdin)
+_, err := client.RunWithInput("ipconfig", os.Stdout, os.Stderr, os.Stdin)
 if err != nil {
-	fmt.Println(err)
+	panic(err)
 }
 
-fmt.Println(run)
 ```
 
 For a more complex example, it is possible to call the various functions directly:
@@ -110,21 +110,22 @@ import (
 )
 
 stdin := bytes.NewBufferString("ipconfig /all")
-
-client := winrm.NewClient(&winrm.Endpoint{Host: "localhost", Port: 5985, HTTPS: false, Insecure: false}, "Administrator", "secret")
+endpoint := NewEndpoint("localhost",5985,false,false,nil)
+client , err := winrm.NewClient(endpoint, "Administrator", "secret")
+if err != nil {
+	panic(err)
+}
 shell, err := client.CreateShell()
 if err != nil {
-  fmt.Printf("Impossible to create shell %s\n", err)
-  os.Exit(1)
+  panic(err)
 }
 var cmd *Command
 cmd, err = shell.Execute("cmd.exe")
 if err != nil {
-  fmt.Printf("Impossible to create Command %s\n", err)
-  os.Exit(1)
+  panic(err)
 }
 
-go io.Copy(cmd.Stdin, &stdin)
+go io.Copy(cmd.Stdin, stdin)
 go io.Copy(os.Stdout, cmd.Stdout)
 go io.Copy(os.Stderr, cmd.Stderr)
 
