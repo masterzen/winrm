@@ -21,13 +21,13 @@ This project supports only basic authentication for local accounts (domain users
 
 _For a PowerShell script to do what is described below in one go, check [Richard Downer's blog](http://www.frontiertown.co.uk/2011/12/overthere-control-windows-from-java/)_
 
-On the remote host, open a Command Prompt (not a PowerShell prompt!) using the __Run as Administrator__ option and paste in the following lines:
+On the remote host, a PowerShell prompt, using the __Run as Administrator__ option and paste in the following lines:
 
 		winrm quickconfig
 		y
-		winrm set winrm/config/service/Auth @{Basic="true"}
-		winrm set winrm/config/service @{AllowUnencrypted="true"}
-		winrm set winrm/config/winrs @{MaxMemoryPerShellMB="1024"}
+		winrm set winrm/config/service/Auth '@{Basic="true"}'
+		winrm set winrm/config/service '@{AllowUnencrypted="true"}'
+		winrm set winrm/config/winrs '@{MaxMemoryPerShellMB="1024"}'
 
 __N.B.:__ The Windows Firewall needs to be running to run this command. See [Microsoft Knowledge Base article #2004640](http://support.microsoft.com/kb/2004640).
 
@@ -86,7 +86,7 @@ import (
   "os"
 )
 
-endpoint := NewEndpoint("localhost",5985,false,false,nil)
+endpoint := winrm.NewEndpoint("localhost", 5985, false, false, nil)
 client, err := winrm.NewClient(endpoint,"Administrator", "secret")
 if err != nil {
 	panic(err)
@@ -110,7 +110,7 @@ import (
 )
 
 stdin := bytes.NewBufferString("ipconfig /all")
-endpoint := NewEndpoint("localhost",5985,false,false,nil)
+endpoint := winrm.NewEndpoint("localhost",5985,false,false,nil)
 client , err := winrm.NewClient(endpoint, "Administrator", "secret")
 if err != nil {
 	panic(err)
@@ -119,7 +119,7 @@ shell, err := client.CreateShell()
 if err != nil {
   panic(err)
 }
-var cmd *Command
+var cmd *winrm.Command
 cmd, err = shell.Execute("cmd.exe")
 if err != nil {
   panic(err)

@@ -1,11 +1,12 @@
 package winrm
 
 import (
-	"github.com/masterzen/winrm/soap"
-	. "gopkg.in/check.v1"
 	"io/ioutil"
 	"net/http"
 	"strings"
+
+	"github.com/masterzen/winrm/soap"
+	. "gopkg.in/check.v1"
 )
 
 func (s *WinRMSuite) TestNewClient(c *C) {
@@ -26,22 +27,22 @@ func (s *WinRMSuite) TestClientCreateShell(c *C) {
 	}
 
 	shell, _ := client.CreateShell()
-	c.Assert(shell.ShellId, Equals, "67A74734-DD32-4F10-89DE-49A060483810")
+	c.Assert(shell.ID, Equals, "67A74734-DD32-4F10-89DE-49A060483810")
 }
 
 func (s *WinRMSuite) TestReplaceTransportWithDecorator(c *C) {
 	var myrt rtfunc = func(req *http.Request) (*http.Response, error) {
 		req.Body.Close()
-		return &http.Response{StatusCode: 500, Body: ioutil.NopCloser(strings.NewReader("yeehaw"))}, nil
+		return &http.Response{StatusCode: 500, Body: ioutil.NopCloser(strings.NewReader(""))}, nil
 	}
 
-	params := DefaultParameters()
+	params := DefaultParameters
 	params.TransportDecorator = func(*http.Transport) http.RoundTripper { return myrt }
 
 	client, err := NewClientWithParameters(&Endpoint{Host: "localhost", Port: 5985}, "Administrator", "password", params)
 	c.Assert(err, IsNil)
 	_, err = client.http(client, soap.NewMessage())
-	c.Assert(err.Error(), Equals, "http error: 500 - yeehaw")
+	c.Assert(err.Error(), Equals, "http error: 500")
 }
 
 type rtfunc func(*http.Request) (*http.Response, error)
