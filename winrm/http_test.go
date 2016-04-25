@@ -52,12 +52,10 @@ func (s *WinRMSuite) TestHttpRequest(c *C) {
 	ts.Listener = l
 	ts.Start()
 	defer ts.Close()
-
-	client, err := NewClient(&Endpoint{Host: "localhost", Port: 15985}, "test", "test")
+	endpoint := NewEndpoint("localhost", 15985, false, false, nil)
+	client, err := NewClient(endpoint, "test", "test")
 	c.Assert(err, IsNil)
 	shell, err := client.CreateShell()
-	if err != nil {
-		c.Fatalf("Can't create shell %s", err)
-	}
-	c.Assert(shell.ShellId, Equals, "67A74734-DD32-4F10-89DE-49A060483810")
+	c.Assert(err, IsNil)
+	c.Assert(shell.ID, Equals, "67A74734-DD32-4F10-89DE-49A060483810")
 }

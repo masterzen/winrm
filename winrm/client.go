@@ -11,6 +11,7 @@ import (
 	"github.com/masterzen/winrm/soap"
 )
 
+// Client struct
 type Client struct {
 	Parameters
 	username  string
@@ -24,8 +25,7 @@ type Client struct {
 // NewClient will create a new remote client on url, connecting with user and password
 // This function doesn't connect (connection happens only when CreateShell is called)
 func NewClient(endpoint *Endpoint, user, password string) (client *Client, err error) {
-	params := DefaultParameters()
-	client, err = NewClientWithParameters(endpoint, user, password, params)
+	client, err = NewClientWithParameters(endpoint, user, password, DefaultParameters)
 	return
 }
 
@@ -82,23 +82,27 @@ func readCACerts(certs *[]byte) (*x509.CertPool, error) {
 
 // CreateShell will create a WinRM Shell, which is the prealable for running
 // commands.
-func (client *Client) CreateShell() (shell *Shell, err error) {
+func (client *Client) CreateShell() (*Shell, error) {
 	request := NewOpenShellRequest(client.url, &client.Parameters)
 	defer request.Free()
 
 	response, err := client.sendRequest(request)
-	if err == nil {
-		var shellId string
-		if shellId, err = ParseOpenShellResponse(response); err == nil {
-			shell = &Shell{client: client, ShellId: shellId}
-		}
+	if err != nil {
+		return nil, err
 	}
-	return
+
+	shellID, err := ParseOpenShellResponse(response)
+	if err != nil {
+		return nil, err
+	}
+
+	return client.NewShell(shellID), nil
+
 }
 
 // NewShell will create a new WinRM Shell for the given shellID
 func (client *Client) NewShell(shellID string) *Shell {
-	return &Shell{client: client, ShellId: shellID}
+	return &Shell{client: client, ID: shellID}
 }
 
 func (client *Client) sendRequest(request *soap.SoapMessage) (response string, err error) {

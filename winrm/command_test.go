@@ -16,7 +16,7 @@ func (s *WinRMSuite) TestExecuteCommand(c *C) {
 	client, err := NewClient(&Endpoint{Host: "localhost", Port: 5985}, "Administrator", "v3r1S3cre7")
 	c.Assert(err, IsNil)
 
-	shell := &Shell{client: client, ShellId: "67A74734-DD32-4F10-89DE-49A060483810"}
+	shell := &Shell{client: client, ID: "67A74734-DD32-4F10-89DE-49A060483810"}
 	count := 0
 	client.http = func(client *Client, message *soap.SoapMessage) (string, error) {
 		switch count {
@@ -59,8 +59,13 @@ func (s *WinRMSuite) TestStdinCommand(c *C) {
 	client, err := NewClient(&Endpoint{Host: "localhost", Port: 5985}, "Administrator", "v3r1S3cre7")
 	c.Assert(err, IsNil)
 
-	shell := &Shell{client: client, ShellId: "67A74734-DD32-4F10-89DE-49A060483810"}
+	shell := &Shell{
+		client: client,
+		ID:     "67A74734-DD32-4F10-89DE-49A060483810",
+	}
+
 	count := 0
+
 	client.http = func(client *Client, message *soap.SoapMessage) (string, error) {
 		if strings.Contains(message.String(), "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Send") {
 			c.Assert(message.String(), Contains, "c3RhbmRhcmQgaW5wdXQ=")
@@ -90,8 +95,13 @@ func (s *WinRMSuite) TestCommandExitCode(c *C) {
 	client, err := NewClient(&Endpoint{Host: "localhost", Port: 5985}, "Administrator", "v3r1S3cre7")
 	c.Assert(err, IsNil)
 
-	shell := &Shell{client: client, ShellId: "67A74734-DD32-4F10-89DE-49A060483810"}
+	shell := &Shell{
+		client: client,
+		ID:     "67A74734-DD32-4F10-89DE-49A060483810",
+	}
+
 	count := 0
+
 	client.http = func(client *Client, message *soap.SoapMessage) (string, error) {
 		defer func() { count += 1 }()
 		switch count {
@@ -117,7 +127,7 @@ func (s *WinRMSuite) TestCloseCommandStopsFetch(c *C) {
 	client, err := NewClient(&Endpoint{Host: "localhost", Port: 5985}, "Administrator", "v3r1S3cre7")
 	c.Assert(err, IsNil)
 
-	shell := &Shell{client: client, ShellId: "67A74734-DD32-4F10-89DE-49A060483810"}
+	shell := &Shell{client: client, ID: "67A74734-DD32-4F10-89DE-49A060483810"}
 
 	http := make(chan string)
 	client.http = func(client *Client, message *soap.SoapMessage) (string, error) {

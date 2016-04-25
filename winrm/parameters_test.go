@@ -5,7 +5,7 @@ import (
 )
 
 func (s *WinRMSuite) TestDefaultParameters(c *C) {
-	params := DefaultParameters()
+	params := DefaultParameters
 	c.Assert(params.Locale, Equals, "en-US")
 	c.Assert(params.Timeout, Equals, "PT60S")
 	c.Assert(params.EnvelopeSize, Equals, 153600)
