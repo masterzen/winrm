@@ -103,7 +103,7 @@ func (s *WinRMSuite) TestCommandExitCode(c *C) {
 	count := 0
 
 	client.http = func(client *Client, message *soap.SoapMessage) (string, error) {
-		defer func() { count += 1 }()
+		defer func() { count++ }()
 		switch count {
 		case 0:
 			return executeCommandResponse, nil

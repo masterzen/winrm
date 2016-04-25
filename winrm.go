@@ -17,10 +17,12 @@ limitations under the License.
 package main
 
 import (
+	"crypto/x509/pkix"
 	"flag"
 	"fmt"
 	"io/ioutil"
 	"os"
+	"time"
 
 	"github.com/masterzen/winrm/winrm"
 )
@@ -35,6 +37,8 @@ func main() {
 		https    bool
 		insecure bool
 		cacert   string
+		gencert  bool
+		certsize string
 	)
 
 	flag.StringVar(&hostname, "hostname", "localhost", "winrm host")
@@ -44,32 +48,75 @@ func main() {
 	flag.BoolVar(&https, "https", false, "use https")
 	flag.BoolVar(&insecure, "insecure", false, "skip SSL validation")
 	flag.StringVar(&cacert, "cacert", "", "CA certificate to use")
+	flag.BoolVar(&gencert, "gencert", false, "Generate x509 client certificate to use with secure connections")
+	flag.StringVar(&certsize, "certsize", "", "Priv RSA key between 512, 1024, 2048, 4096. Default :2048")
+
 	flag.Parse()
 
-	var certBytes []byte
-	var err error
-	if cacert != "" {
-		certBytes, err = ioutil.ReadFile(cacert)
-		if err != nil {
-			fmt.Println(err)
-			os.Exit(1)
+	if gencert {
+		cersize := pickSizeCert(certsize)
+		config := winrm.CertConfig{
+			Subject: pkix.Name{
+				CommonName: "winrm client cert",
+			},
+			ValidFrom: time.Now(),
+			ValidFor:  365 * 24 * time.Hour,
+			SizeT:     cersize,
+			Method:    winrm.RSA,
 		}
+
+		certPem, privPem, err := winrm.NewCert(config)
+		check(err)
+		err = ioutil.WriteFile("cert.cer", []byte(certPem), 0644)
+		check(err)
+		err = ioutil.WriteFile("priv.pem", []byte(privPem), 0644)
+		check(err)
 	} else {
-		certBytes = nil
-	}
 
-	cmd = flag.Arg(0)
-	client, err := winrm.NewClient(&winrm.Endpoint{Host: hostname, Port: port, HTTPS: https, Insecure: insecure, CACert: &certBytes}, user, pass)
+		var (
+			certBytes []byte
+			err       error
+		)
+
+		if cacert != "" {
+			certBytes, err = ioutil.ReadFile(cacert)
+			check(err)
+		} else {
+			certBytes = nil
+		}
+
+		cmd = flag.Arg(0)
+
+		endpoint := winrm.NewEndpoint(hostname, port, https, insecure, &certBytes)
+		client, err := winrm.NewClient(endpoint, user, pass)
+		check(err)
+
+		exitCode, err := client.RunWithInput(cmd, os.Stdout, os.Stderr, os.Stdin)
+		check(err)
+
+		os.Exit(exitCode)
+	}
+}
+
+func pickSizeCert(size string) int {
+	switch size {
+	case "512":
+		return 512
+	case "1024":
+		return 1024
+	case "2048":
+		return 2048
+	case "4096":
+		return 4096
+	default:
+		return 2048
+	}
+}
+
+// generic check error func
+func check(err error) {
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-
-	exitCode, err := client.RunWithInput(cmd, os.Stdout, os.Stderr, os.Stdin)
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-
-	os.Exit(exitCode)
 }
