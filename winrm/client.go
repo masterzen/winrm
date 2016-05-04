@@ -29,7 +29,7 @@ func NewClient(endpoint *Endpoint, user, password string) (client *Client, err e
 	return
 }
 
-// NewClient will create a new remote client on url, connecting with user and password
+// NewClientWithParameters will create a new remote client on url, connecting with user and password
 // This function doesn't connect (connection happens only when CreateShell is called)
 func NewClientWithParameters(endpoint *Endpoint, user, password string, params *Parameters) (client *Client, err error) {
 	transport, err := newTransport(endpoint)
@@ -128,7 +128,7 @@ func (client *Client) Run(command string, stdout io.Writer, stderr io.Writer) (e
 	return cmd.ExitCode(), cmd.err
 }
 
-// Run will run command on the the remote host, returning the process stdout and stderr
+// RunWithString will run command on the the remote host, returning the process stdout and stderr
 // as strings, and using the input stdin string as the process input
 func (client *Client) RunWithString(command string, stdin string) (stdout string, stderr string, exitCode int, err error) {
 	shell, err := client.CreateShell()
@@ -151,7 +151,7 @@ func (client *Client) RunWithString(command string, stdin string) (stdout string
 	return outWriter.String(), errWriter.String(), cmd.ExitCode(), cmd.err
 }
 
-// Run will run command on the the remote host, writing the process stdout and stderr to
+// RunWithInput will run command on the the remote host, writing the process stdout and stderr to
 // the given writers, and injecting the process stdin with the stdin reader.
 // Warning stdin (not stdout/stderr) are bufferized, which means reading only one byte in stdin will
 // send a winrm http packet to the remote host. If stdin is a pipe, it might be better for

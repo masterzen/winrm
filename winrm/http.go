@@ -31,6 +31,7 @@ func body(response *http.Response) (string, error) {
 	return "", fmt.Errorf("invalid content type")
 }
 
+// Http_post make post to the winrm soap service
 func Http_post(client *Client, request *soap.SoapMessage) (response string, err error) {
 	httpClient := &http.Client{Transport: client.transport}
 

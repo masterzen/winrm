@@ -16,6 +16,7 @@ func defaultHeaders(message *soap.SoapMessage, url string, params *Parameters) *
 	return message.Header().To(url).ReplyTo("http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous").MaxEnvelopeSize(params.EnvelopeSize).Id(genUUID()).Locale(params.Locale).Timeout(params.Timeout)
 }
 
+//NewOpenShellRequest makes a new soap request
 func NewOpenShellRequest(uri string, params *Parameters) (message *soap.SoapMessage) {
 	if params == nil {
 		params = DefaultParameters
@@ -32,6 +33,7 @@ func NewOpenShellRequest(uri string, params *Parameters) (message *soap.SoapMess
 	return
 }
 
+// NewDeleteShellRequest ...
 func NewDeleteShellRequest(uri string, shellId string, params *Parameters) (message *soap.SoapMessage) {
 	if params == nil {
 		params = DefaultParameters
@@ -44,6 +46,7 @@ func NewDeleteShellRequest(uri string, shellId string, params *Parameters) (mess
 	return
 }
 
+// NewExecuteCommandRequest exec command on specific shellID
 func NewExecuteCommandRequest(uri, shellId, command string, arguments []string, params *Parameters) (message *soap.SoapMessage) {
 	if params == nil {
 		params = DefaultParameters

@@ -13,9 +13,9 @@ func (shell *Shell) Execute(command string, arguments ...string) (cmd *Command, 
 
 	response, err := shell.client.sendRequest(request)
 	if err == nil {
-		var commandId string
-		if commandId, err = ParseExecuteCommandResponse(response); err == nil {
-			cmd = newCommand(shell, commandId)
+		var commandID string
+		if commandID, err = ParseExecuteCommandResponse(response); err == nil {
+			cmd = newCommand(shell, commandID)
 		}
 	}
 	return
