@@ -39,6 +39,7 @@ func main() {
 		cacert   string
 		gencert  bool
 		certsize string
+		timeout  string
 	)
 
 	flag.StringVar(&hostname, "hostname", "localhost", "winrm host")
@@ -50,6 +51,7 @@ func main() {
 	flag.StringVar(&cacert, "cacert", "", "CA certificate to use")
 	flag.BoolVar(&gencert, "gencert", false, "Generate x509 client certificate to use with secure connections")
 	flag.StringVar(&certsize, "certsize", "", "Priv RSA key between 512, 1024, 2048, 4096. Default :2048")
+	flag.StringVar(&timeout, "timeout", "0s", "connection timeout")
 
 	flag.Parse()
 
@@ -74,8 +76,9 @@ func main() {
 	} else {
 
 		var (
-			certBytes []byte
-			err       error
+			certBytes      []byte
+			err            error
+			connectTimeout time.Duration
 		)
 
 		if cacert != "" {
@@ -87,7 +90,10 @@ func main() {
 
 		cmd = flag.Arg(0)
 
-		endpoint := winrm.NewEndpoint(hostname, port, https, insecure, &certBytes)
+		connectTimeout, err = time.ParseDuration(timeout)
+		check(err)
+
+		endpoint := winrm.NewEndpointWithTimeout(hostname, port, https, insecure, &certBytes, connectTimeout)
 		client, err := winrm.NewClient(endpoint, user, pass)
 		check(err)
 

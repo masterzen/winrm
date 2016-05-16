@@ -2,8 +2,14 @@ package winrm
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"io/ioutil"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -171,4 +177,50 @@ func (s *WinRMSuite) TestCloseCommandStopsFetch(c *C) {
 	case <-time.After(1 * time.Second):
 		c.Log("no poll within one second, assuming fetch has stopped")
 	}
+}
+
+func (s *WinRMSuite) TestConnectionTimeout(c *C) {
+	count := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(2 * time.Second)
+		w.Header().Set("Content-Type", "application/soap+xml")
+		switch count {
+		case 0:
+			{
+				count = 1
+				fmt.Fprintln(w, executeCommandResponse)
+			}
+		case 1:
+			{
+				count = 2
+				fmt.Fprintln(w, outputResponse)
+			}
+		default:
+			{
+				fmt.Fprintln(w, doneCommandResponse)
+			}
+		}
+	}))
+	defer ts.Close()
+
+	// find port
+	url, err := url.Parse(ts.URL)
+	if err != nil {
+		c.Error(err)
+	}
+	host, port, err := net.SplitHostPort(url.Host)
+	if err != nil {
+		c.Error(err)
+	}
+	iport, err := strconv.Atoi(port)
+	if err != nil {
+		c.Error(err)
+	}
+
+	client, err := NewClient(&Endpoint{Host: host, Port: iport, Timeout: 1 * time.Second}, "Administrator", "v3r1S3cre7")
+	c.Assert(err, IsNil)
+
+	shell := &Shell{client: client, ID: "67A74734-DD32-4F10-89DE-49A060483810"}
+	_, err = shell.Execute("ipconfig /all")
+	c.Assert(err, ErrorMatches, ".*timeout.*")
 }
