@@ -56,6 +56,7 @@ func newTransport(endpoint *Endpoint) (*http.Transport, error) {
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: endpoint.Insecure,
 		},
+		ResponseHeaderTimeout: endpoint.Timeout,
 	}
 
 	if endpoint.CACert != nil && len(*endpoint.CACert) > 0 {
