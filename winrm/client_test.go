@@ -33,7 +33,8 @@ func (s *WinRMSuite) TestClientCreateShell(c *C) {
 func (s *WinRMSuite) TestReplaceTransportWithDecorator(c *C) {
 	var myrt rtfunc = func(req *http.Request) (*http.Response, error) {
 		req.Body.Close()
-		return &http.Response{StatusCode: 500, Body: ioutil.NopCloser(strings.NewReader(""))}, nil
+		header := http.Header{"Content-Type": {"application/soap+xml; charset=UTF-8"}}
+		return &http.Response{StatusCode: 500, Header: header, Body: ioutil.NopCloser(strings.NewReader(""))}, nil
 	}
 
 	params := DefaultParameters
@@ -42,7 +43,7 @@ func (s *WinRMSuite) TestReplaceTransportWithDecorator(c *C) {
 	client, err := NewClientWithParameters(&Endpoint{Host: "localhost", Port: 5985}, "Administrator", "password", params)
 	c.Assert(err, IsNil)
 	_, err = client.http(client, soap.NewMessage())
-	c.Assert(err.Error(), Equals, "http error: 500")
+	c.Assert(err.Error(), Equals, "http error: 500 - ")
 }
 
 type rtfunc func(*http.Request) (*http.Response, error)

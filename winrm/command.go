@@ -135,6 +135,9 @@ func (command *Command) slurpAllOutput() (finished bool, err error) {
 			// Operation timeout because there was no command output
 			return
 		}
+		if strings.Contains(err.Error(), "EOF") {
+			command.exitCode = 16001
+		}
 
 		command.Stderr.write.CloseWithError(err)
 		command.Stdout.write.CloseWithError(err)
