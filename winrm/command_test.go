@@ -6,7 +6,6 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"sync"
 	"time"
@@ -267,37 +266,25 @@ func (s *WinRMSuite) TestOperationTimeoutSupport(c *C) {
 
 func (s *WinRMSuite) TestEOFError(c *C) {
 	count := 0
-	var ts *httptest.Server
-	ts = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/soap+xml")
+	client, err := NewClient(&Endpoint{Host: "localhost", Port: 5985}, "Administrator", "v3r1S3cre7")
+	c.Assert(err, IsNil)
+
+	// simulating a dropped client connection
+	client.http = func(client *Client, message *soap.SoapMessage) (string, error) {
+		defer func() { count++ }()
 		switch count {
 		case 0:
-			{
-				count = 1
-				fmt.Fprintln(w, executeCommandResponse)
-			}
+			return executeCommandResponse, nil
 		case 1:
-			{
-				ts.CloseClientConnections()
-			}
+			return "", fmt.Errorf("http response error: 200 - /wsman EOF")
 		default:
-			{
-				fmt.Fprintln(w, doneCommandResponse)
-			}
+			return doneCommandExitCode0Response, nil
 		}
-	}))
-
-	host, port, err := FindHostAndPortFromURL(ts.URL)
-	if err != nil {
-		c.Error(err)
 	}
-
-	client, err := NewClient(&Endpoint{Host: host, Port: port}, "Administrator", "v3r1S3cre7")
-	c.Assert(err, IsNil)
 
 	shell := &Shell{client: client, ID: "67A74734-DD32-4F10-89DE-49A060483810"}
 	command, _ := shell.Execute("ipconfig /all")
-	ts.CloseClientConnections()
+
 	command.Wait()
 	c.Assert(command.exitCode, Equals, 16001)
 	c.Assert(command.err.Error(), Contains, "EOF")
