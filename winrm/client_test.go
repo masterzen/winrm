@@ -1,11 +1,13 @@
 package winrm
 
 import (
+	"bytes"
 	"io/ioutil"
 	"net/http"
 	"strings"
 
 	"github.com/masterzen/winrm/soap"
+
 	. "gopkg.in/check.v1"
 )
 
@@ -30,6 +32,53 @@ func (s *WinRMSuite) TestClientCreateShell(c *C) {
 	c.Assert(shell.ID, Equals, "67A74734-DD32-4F10-89DE-49A060483810")
 }
 
+func (s *WinRMSuite) TestRun(c *C) {
+	ts, host, port, err := runWinRMFakeServer(c, "no input")
+	c.Assert(err, IsNil)
+	defer ts.Close()
+
+	client, err := NewClient(&Endpoint{Host: host, Port: port}, "Administrator", "v3r1S3cre7")
+	c.Assert(err, IsNil)
+
+	var stdout, stderr bytes.Buffer
+	code, err := client.Run("ipconfig /all", &stdout, &stderr)
+	c.Assert(err, IsNil)
+	c.Assert(code, Equals, 123)
+	c.Assert(stdout.String(), Equals, "That's all folks!!!")
+	c.Assert(stderr.String(), Equals, "This is stderr, I'm pretty sure!")
+}
+
+func (s *WinRMSuite) TestRunWithString(c *C) {
+	ts, host, port, err := runWinRMFakeServer(c, "this is the input")
+	c.Assert(err, IsNil)
+	defer ts.Close()
+
+	client, err := NewClient(&Endpoint{Host: host, Port: port}, "Administrator", "v3r1S3cre7")
+	c.Assert(err, IsNil)
+
+	stdout, stderr, code, err := client.RunWithString("ipconfig /all", "this is the input")
+	c.Assert(err, IsNil)
+	c.Assert(code, Equals, 123)
+	c.Assert(stdout, Equals, "That's all folks!!!")
+	c.Assert(stderr, Equals, "This is stderr, I'm pretty sure!")
+}
+
+func (s *WinRMSuite) TestRunWithInput(c *C) {
+	ts, host, port, err := runWinRMFakeServer(c, "this is the input")
+	c.Assert(err, IsNil)
+	defer ts.Close()
+
+	client, err := NewClient(&Endpoint{Host: host, Port: port}, "Administrator", "v3r1S3cre7")
+	c.Assert(err, IsNil)
+
+	var stdout, stderr bytes.Buffer
+	code, err := client.RunWithInput("ipconfig /all", &stdout, &stderr, strings.NewReader("this is the input"))
+	c.Assert(err, IsNil)
+	c.Assert(code, Equals, 123)
+	c.Assert(stdout.String(), Equals, "That's all folks!!!")
+	c.Assert(stderr.String(), Equals, "This is stderr, I'm pretty sure!")
+}
+
 func (s *WinRMSuite) TestReplaceTransportWithDecorator(c *C) {
 	var myrt rtfunc = func(req *http.Request) (*http.Response, error) {
 		req.Body.Close()
@@ -37,13 +86,13 @@ func (s *WinRMSuite) TestReplaceTransportWithDecorator(c *C) {
 		return &http.Response{StatusCode: 500, Header: header, Body: ioutil.NopCloser(strings.NewReader(""))}, nil
 	}
 
-	params := DefaultParameters
+	params := NewParameters("PT60S", "en-US", 153600)
 	params.TransportDecorator = func(*http.Transport) http.RoundTripper { return myrt }
 
 	client, err := NewClientWithParameters(&Endpoint{Host: "localhost", Port: 5985}, "Administrator", "password", params)
 	c.Assert(err, IsNil)
 	_, err = client.http(client, soap.NewMessage())
-	c.Assert(err.Error(), Equals, "http error: 500 - ")
+	c.Assert(err.Error(), Contains, "http error: 500")
 }
 
 type rtfunc func(*http.Request) (*http.Response, error)

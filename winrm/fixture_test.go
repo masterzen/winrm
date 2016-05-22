@@ -1,14 +1,19 @@
 package winrm
 
 import (
+	"bytes"
+	"io/ioutil"
+	"encoding/base64"
 	"fmt"
-	. "gopkg.in/check.v1"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/masterzen/xmlpath"
+	. "gopkg.in/check.v1"
 )
 
 var (
@@ -117,4 +122,38 @@ func StartTestServer(handler http.Handler) (*httptest.Server, string, int, error
 	ts = httptest.NewServer(handler)
 	host, port, err := FindHostAndPortFromURL(ts.URL)
 	return ts, host, port, err
+}
+
+func runWinRMFakeServer(c *C, expectedStdin string) (*httptest.Server, string, int, error) {
+	count := 0
+	return StartTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/soap+xml")
+		b, err := ioutil.ReadAll(r.Body)
+		defer r.Body.Close()
+		if err != nil {
+			c.Fail()
+		}
+		body := string(b)
+		if strings.Contains(body, "transfer/Create") {
+			fmt.Fprintln(w, createShellResponse)
+		} else if strings.Contains(body, "shell/Command") {
+			fmt.Fprintln(w, executeCommandResponse)
+		} else if strings.Contains(body, "shell/Send") {
+			var stdin bytes.Buffer
+			doc, err := xmlpath.Parse(strings.NewReader(body))
+			c.Assert(err, IsNil)
+			stdins, _ := xpath(doc, "//rsp:Stream[@Name='stdin']")
+			for _, node := range stdins {
+				content, _ := base64.StdEncoding.DecodeString(node.String())
+				stdin.Write(content)
+			}
+			c.Assert(stdin.String(), Equals, expectedStdin)
+			w.WriteHeader(http.StatusOK)
+		} else if strings.Contains(body, "shell/Receive") && count == 0 {
+			count = 1
+			fmt.Fprintln(w, outputResponse)
+		} else {
+			fmt.Fprintln(w, doneCommandResponse)
+		}
+	}))
 }
