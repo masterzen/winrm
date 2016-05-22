@@ -6,11 +6,11 @@ DEPS = $(go list -f '{{range .TestImports}}{{.}} {{end}}' ./... | fgrep -v 'winr
 
 all: deps
 	@mkdir -p bin/
-	@echo -e "$(OK_COLOR)==> Building$(NO_COLOR)"
+	@printf "$(OK_COLOR)==> Building$(NO_COLOR)\n"
 	@go build -o $(GOPATH)/bin/winrm github.com/masterzen/winrm
 
 deps:
-	@echo -e "$(OK_COLOR)==> Installing dependencies$(NO_COLOR)"
+	@printf "$(OK_COLOR)==> Installing dependencies$(NO_COLOR)\n"
 	@go get -d -v ./...
 	@echo $(DEPS) | xargs -n1 go get -d
 
@@ -24,11 +24,11 @@ format:
 	go fmt ./...
 
 ci: deps
-	@echo -e "$(OK_COLOR)==> Testing with Coveralls...$(NO_COLOR)"
+	@printf "$(OK_COLOR)==> Testing with Coveralls...$(NO_COLOR)\n"
 	"$(CURDIR)/scripts/test.sh"
 
 test: deps
-	@echo -e "$(OK_COLOR)==> Testing...$(NO_COLOR)"
+	@printf "$(OK_COLOR)==> Testing...$(NO_COLOR)\n"
 	go test ./...
 
 .PHONY: all clean deps format test updatedeps
