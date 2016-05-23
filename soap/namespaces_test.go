@@ -19,7 +19,7 @@ func TestAddUsualNamespaces(t *testing.T) {
 			}
 		}
 		if !found {
-			t.Errorf("Test failed - Namespace %s not found", ns)
+			t.Errorf("Test failed - Namespace %v not found", ns)
 		}
 	}
 

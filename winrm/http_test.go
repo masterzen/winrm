@@ -1,9 +1,7 @@
 package winrm
 
 import (
-	"net"
 	"net/http"
-	"net/http/httptest"
 
 	. "gopkg.in/check.v1"
 )
@@ -41,18 +39,13 @@ stderr</rsp:OutputStreams>
 </s:Envelope>`
 
 func (s *WinRMSuite) TestHttpRequest(c *C) {
-	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts, host, port, err := StartTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/soap+xml")
 		w.Write([]byte(response))
 	}))
-	l, err := net.Listen("tcp", "127.0.0.1:15985")
-	if err != nil {
-		c.Fatalf("Can't listen %s", err)
-	}
-	ts.Listener = l
-	ts.Start()
+    c.Assert(err, IsNil)
 	defer ts.Close()
-	endpoint := NewEndpoint("localhost", 15985, false, false, nil)
+	endpoint := NewEndpoint(host, port, false, false, nil)
 	client, err := NewClient(endpoint, "test", "test")
 	c.Assert(err, IsNil)
 	shell, err := client.CreateShell()
