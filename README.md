@@ -1,6 +1,8 @@
 # WinRM for Go
 
-This is a Go library (and command-line executable) to execute remote commands on Windows machines through
+_Note_: if you're looking for the `winrm` command-line tool, this has been splitted from this project and is available at [winrm-cli](https://github.com/masterzen/winrm-cli)
+
+This is a Go library to execute remote commands on Windows machines through
 the use of WinRM/WinRS.
 
 _Note_: this library doesn't support domain users (it doesn't support GSSAPI nor Kerberos). It's primary target is to execute remote commands on EC2 windows machines.
@@ -47,11 +49,9 @@ cd winrm
 make
 ```
 
-This will generate a binary in the base directory called `./winrm`.
-
 _Note_: this winrm code doesn't depend anymore on [Gokogiri](https://github.com/moovweb/gokogiri) which means it is now in pure Go.
 
-_Note_: you need go 1.1+. Please check your installation with
+_Note_: you need go 1.5+. Please check your installation with
 
 ```
 go version
@@ -59,11 +59,7 @@ go version
 
 ## Command-line usage
 
-Once built, you can run remote commands like this:
-
-```sh
-./winrm -hostname remote.domain.com -username "Administrator" -password "secret" "ipconfig /all"
-```
+For command-line usage check the [winrm-cli project](https://github.com/masterzen/winrm-cli)
 
 ## Library Usage
 
@@ -150,7 +146,7 @@ client, err := winrm.NewClientWithParameters(..., params)
 ## Developing on WinRM
 
 If you wish to work on `winrm` itself, you'll first need [Go](http://golang.org)
-installed (version 1.1+ is _required_). Make sure you have Go properly installed,
+installed (version 1.5+ is _required_). Make sure you have Go properly installed,
 including setting up your [GOPATH](http://golang.org/doc/code.html#GOPATH).
 
 For some additional dependencies, Go needs [Mercurial](http://mercurial.selenic.com/)
@@ -158,18 +154,12 @@ and [Bazaar](http://bazaar.canonical.com/en/) to be installed.
 Winrm itself doesn't require these, but a dependency of a dependency does.
 
 Next, clone this repository into `$GOPATH/src/github.com/masterzen/winrm` and
-then just type `make`. In a few moments, you'll have a working `winrm` executable:
+then just type `make`. 
 
-```
-$ make
-...
-$ bin/winrm
-...
-```
 You can run tests by typing `make test`.
 
 If you make any changes to the code, run `make format` in order to automatically
 format the code according to Go standards.
 
 When new dependencies are added to winrm you can use `make updatedeps` to
-get the latest and subsequently use `make` to compile and generate the `winrm` binary.
+get the latest and subsequently use `make` to compile.

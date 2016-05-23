@@ -43,7 +43,7 @@ func (s *WinRMSuite) TestHttpRequest(c *C) {
 		w.Header().Set("Content-Type", "application/soap+xml")
 		w.Write([]byte(response))
 	}))
-    c.Assert(err, IsNil)
+	c.Assert(err, IsNil)
 	defer ts.Close()
 	endpoint := NewEndpoint(host, port, false, false, nil)
 	client, err := NewClient(endpoint, "test", "test")

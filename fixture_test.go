@@ -2,9 +2,9 @@ package winrm
 
 import (
 	"bytes"
-	"io/ioutil"
 	"encoding/base64"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"net/http/httptest"
