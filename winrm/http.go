@@ -32,13 +32,12 @@ func body(response *http.Response) (string, error) {
 }
 
 // Http_post make post to the winrm soap service
-func Http_post(client *Client, request *soap.SoapMessage) (response string, err error) {
+func Http_post(client *Client, request *soap.SoapMessage) (string, error) {
 	httpClient := &http.Client{Transport: client.transport}
 
 	req, err := http.NewRequest("POST", client.url, strings.NewReader(request.String()))
 	if err != nil {
-		err = fmt.Errorf("impossible to create http request %s", err)
-		return
+		return "", fmt.Errorf("impossible to create http request %s", err)
 	}
 	req.Header.Set("Content-Type", soapXML+";charset=UTF-8")
 	req.SetBasicAuth(client.username, client.password)
@@ -47,10 +46,13 @@ func Http_post(client *Client, request *soap.SoapMessage) (response string, err 
 		return "", fmt.Errorf("unknown error %s", err)
 	}
 
+	body, err := body(resp)
+	if err != nil {
+		return "", fmt.Errorf("http response error: %d - %s", resp.StatusCode, err.Error())
+	}
 	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("http error: %d", resp.StatusCode)
+		return "", fmt.Errorf("http error: %d - %s", resp.StatusCode, body)
 	}
 
-	return body(resp)
-
+	return body, err
 }

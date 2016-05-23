@@ -3,6 +3,11 @@ package winrm
 import (
 	"fmt"
 	. "gopkg.in/check.v1"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -48,6 +53,8 @@ var (
 	doneCommandResponse = `<s:Envelope xml:lang="en-US" xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:a="http://schemas.xmlsoap.org/ws/2004/08/addressing" xmlns:w="http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd" xmlns:rsp="http://schemas.microsoft.com/wbem/wsman/1/windows/shell" xmlns:p="http://schemas.microsoft.com/wbem/wsman/1/wsman.xsd"><s:Header><a:Action>http://schemas.microsoft.com/wbem/wsman/1/windows/shell/ReceiveResponse</a:Action><a:MessageID>uuid:206F8145-683D-4987-949B-E099F999F088</a:MessageID><a:To>http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</a:To><a:RelatesTo>uuid:6c68191c-8385-4816-506a-0769cb9f3f4e</a:RelatesTo></s:Header><s:Body><rsp:ReceiveResponse><rsp:CommandState CommandId="4531DAA3-60C2-4CAD-9FCA-F433101DAC8A" State="http://schemas.microsoft.com/wbem/wsman/1/windows/shell/CommandState/Done"><rsp:ExitCode>123</rsp:ExitCode></rsp:CommandState></rsp:ReceiveResponse></s:Body></s:Envelope>
 	`
 	doneCommandExitCode0Response = `<s:Envelope xml:lang="en-US" xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:a="http://schemas.xmlsoap.org/ws/2004/08/addressing" xmlns:w="http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd" xmlns:rsp="http://schemas.microsoft.com/wbem/wsman/1/windows/shell" xmlns:p="http://schemas.microsoft.com/wbem/wsman/1/wsman.xsd"><s:Header><a:Action>http://schemas.microsoft.com/wbem/wsman/1/windows/shell/ReceiveResponse</a:Action><a:MessageID>uuid:206F8145-683D-4987-949B-E099F999F088</a:MessageID><a:To>http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</a:To><a:RelatesTo>uuid:6c68191c-8385-4816-506a-0769cb9f3f4e</a:RelatesTo></s:Header><s:Body><rsp:ReceiveResponse><rsp:CommandState CommandId="4531DAA3-60C2-4CAD-9FCA-F433101DAC8A" State="http://schemas.microsoft.com/wbem/wsman/1/windows/shell/CommandState/Done"><rsp:ExitCode>0</rsp:ExitCode></rsp:CommandState></rsp:ReceiveResponse></s:Body></s:Envelope>`
+
+	operationTimeoutResponse = `<s:Envelope xml:lang="en-US" xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:a="http://schemas.xmlsoap.org/ws/2004/08/addressing" xmlns:x="http://schemas.xmlsoap.org/ws/2004/09/transfer" xmlns:e="http://schemas.xmlsoap.org/ws/2004/08/eventing" xmlns:n="http://schemas.xmlsoap.org/ws/2004/09/enumeration" xmlns:w="http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd" xmlns:p="http://schemas.microsoft.com/wbem/wsman/1/wsman.xsd"><s:Header><a:Action>http://schemas.dmtf.org/wbem/wsman/1/wsman/fault</a:Action><a:MessageID>uuid:D6232298-AF04-4853-AFC5-FEEB5732B81D</a:MessageID><a:To>http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</a:To><a:RelatesTo>uuid:e54190b3-e060-4b5c-4779-b63ab4963bac</a:RelatesTo></s:Header><s:Body><s:Fault><s:Code><s:Value>s:Receiver</s:Value><s:Subcode><s:Value>w:TimedOut</s:Value></s:Subcode></s:Code><s:Reason><s:Text xml:lang="en-US">The WS-Management service cannot complete the operation within the time specified in OperationTimeout.  </s:Text></s:Reason><s:Detail><f:WSManFault xmlns:f="http://schemas.microsoft.com/wbem/wsman/1/wsmanfault" Code="2150858793" Machine="127.0.0.1"><f:Message>The WS-Management service cannot complete the operation within the time specified in OperationTimeout.  </f:Message></f:WSManFault></s:Detail></s:Fault></s:Body></s:Envelope>`
 )
 
 type containsChecker struct {
@@ -84,4 +91,30 @@ func matches(haystack, needle interface{}) (result bool, error string) {
 		return strings.Contains(valueStr, neStr), ""
 	}
 	return false, "Obtained value is not a string and has no .String()"
+}
+
+// FindHostAndPortFromURL extracts the host and port part of a full url (like http://address:port/path#fragment)
+func FindHostAndPortFromURL(rawurl string) (string, int, error) {
+	url, err := url.Parse(rawurl)
+	if err != nil {
+		return "", 0, err
+	}
+	host, port, err := net.SplitHostPort(url.Host)
+	if err != nil {
+		return "", 0, err
+	}
+	iport, err := strconv.Atoi(port)
+	if err != nil {
+		return "", 0, err
+	}
+	return host, iport, nil
+}
+
+// StartTestServer will start an httptest server on a random port with the given handler
+// and then return the host and port on which this server is listening
+func StartTestServer(handler http.Handler) (*httptest.Server, string, int, error) {
+	var ts *httptest.Server
+	ts = httptest.NewServer(handler)
+	host, port, err := FindHostAndPortFromURL(ts.URL)
+	return ts, host, port, err
 }

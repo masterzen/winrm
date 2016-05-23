@@ -5,11 +5,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"net"
 	"net/http"
-	"net/http/httptest"
-	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -181,7 +177,7 @@ func (s *WinRMSuite) TestCloseCommandStopsFetch(c *C) {
 
 func (s *WinRMSuite) TestConnectionTimeout(c *C) {
 	count := 0
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts, host, port, err := StartTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(2 * time.Second)
 		w.Header().Set("Content-Type", "application/soap+xml")
 		switch count {
@@ -203,24 +199,93 @@ func (s *WinRMSuite) TestConnectionTimeout(c *C) {
 	}))
 	defer ts.Close()
 
-	// find port
-	url, err := url.Parse(ts.URL)
-	if err != nil {
-		c.Error(err)
-	}
-	host, port, err := net.SplitHostPort(url.Host)
-	if err != nil {
-		c.Error(err)
-	}
-	iport, err := strconv.Atoi(port)
 	if err != nil {
 		c.Error(err)
 	}
 
-	client, err := NewClient(&Endpoint{Host: host, Port: iport, Timeout: 1 * time.Second}, "Administrator", "v3r1S3cre7")
+	client, err := NewClient(&Endpoint{Host: host, Port: port, Timeout: 1 * time.Second}, "Administrator", "v3r1S3cre7")
 	c.Assert(err, IsNil)
 
 	shell := &Shell{client: client, ID: "67A74734-DD32-4F10-89DE-49A060483810"}
 	_, err = shell.Execute("ipconfig /all")
 	c.Assert(err, ErrorMatches, ".*timeout.*")
+}
+
+func (s *WinRMSuite) TestOperationTimeoutSupport(c *C) {
+	count := 0
+	ts, host, port, err := StartTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/soap+xml")
+		switch count {
+		case 0:
+			{
+				count = 1
+				fmt.Fprintln(w, executeCommandResponse)
+			}
+		case 1:
+			{
+				count = 2
+				w.WriteHeader(500)
+				fmt.Fprintln(w, operationTimeoutResponse)
+			}
+		case 2:
+			{
+				count = 3
+				fmt.Fprintln(w, outputResponse)
+			}
+		default:
+			{
+				fmt.Fprintln(w, doneCommandResponse)
+			}
+		}
+	}))
+	defer ts.Close()
+
+	if err != nil {
+		c.Error(err)
+	}
+
+	client, err := NewClient(&Endpoint{Host: host, Port: port}, "Administrator", "v3r1S3cre7")
+	c.Assert(err, IsNil)
+
+	shell := &Shell{client: client, ID: "67A74734-DD32-4F10-89DE-49A060483810"}
+	command, _ := shell.Execute("ipconfig /all")
+	var stdout, stderr bytes.Buffer
+	var wg sync.WaitGroup
+	f := func(b *bytes.Buffer, r *commandReader) {
+		wg.Add(1)
+		defer wg.Done()
+		io.Copy(b, r)
+	}
+	go f(&stdout, command.Stdout)
+	go f(&stderr, command.Stderr)
+	command.Wait()
+	wg.Wait()
+	c.Assert(stdout.String(), Equals, "That's all folks!!!")
+	c.Assert(stderr.String(), Equals, "This is stderr, I'm pretty sure!")
+}
+
+func (s *WinRMSuite) TestEOFError(c *C) {
+	count := 0
+	client, err := NewClient(&Endpoint{Host: "localhost", Port: 5985}, "Administrator", "v3r1S3cre7")
+	c.Assert(err, IsNil)
+
+	// simulating a dropped client connection
+	client.http = func(client *Client, message *soap.SoapMessage) (string, error) {
+		defer func() { count++ }()
+		switch count {
+		case 0:
+			return executeCommandResponse, nil
+		case 1:
+			return "", fmt.Errorf("http response error: 200 - /wsman EOF")
+		default:
+			return doneCommandExitCode0Response, nil
+		}
+	}
+
+	shell := &Shell{client: client, ID: "67A74734-DD32-4F10-89DE-49A060483810"}
+	command, _ := shell.Execute("ipconfig /all")
+
+	command.Wait()
+	c.Assert(command.exitCode, Equals, 16001)
+	c.Assert(command.err.Error(), Contains, "EOF")
 }

@@ -115,17 +115,17 @@ func (client *Client) sendRequest(request *soap.SoapMessage) (response string, e
 func (client *Client) Run(command string, stdout io.Writer, stderr io.Writer) (exitCode int, err error) {
 	shell, err := client.CreateShell()
 	if err != nil {
-		return 0, err
+		return 1, err
 	}
+	defer shell.Close()
 	var cmd *Command
 	cmd, err = shell.Execute(command)
 	if err != nil {
-		return 0, err
+		return 1, err
 	}
 	go io.Copy(stdout, cmd.Stdout)
 	go io.Copy(stderr, cmd.Stderr)
 	cmd.Wait()
-	shell.Close()
 	return cmd.ExitCode(), cmd.err
 }
 
@@ -134,13 +134,13 @@ func (client *Client) Run(command string, stdout io.Writer, stderr io.Writer) (e
 func (client *Client) RunWithString(command string, stdin string) (stdout string, stderr string, exitCode int, err error) {
 	shell, err := client.CreateShell()
 	if err != nil {
-		return "", "", 0, err
+		return "", "", 1, err
 	}
 	defer shell.Close()
 	var cmd *Command
 	cmd, err = shell.Execute(command)
 	if err != nil {
-		return "", "", 0, err
+		return "", "", 1, err
 	}
 	if len(stdin) > 0 {
 		cmd.Stdin.Write([]byte(stdin))
@@ -160,13 +160,13 @@ func (client *Client) RunWithString(command string, stdin string) (stdout string
 func (client *Client) RunWithInput(command string, stdout io.Writer, stderr io.Writer, stdin io.Reader) (exitCode int, err error) {
 	shell, err := client.CreateShell()
 	if err != nil {
-		return 0, err
+		return 1, err
 	}
 	defer shell.Close()
 	var cmd *Command
 	cmd, err = shell.Execute(command)
 	if err != nil {
-		return 0, err
+		return 1, err
 	}
 	go io.Copy(cmd.Stdin, stdin)
 	go io.Copy(stdout, cmd.Stdout)

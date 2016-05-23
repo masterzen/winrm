@@ -42,7 +42,7 @@ func newCommand(shell *Shell, id string) *Command {
 		shell:    shell,
 		client:   shell.client,
 		ID:       id,
-		exitCode: 1,
+		exitCode: 0,
 		err:      nil,
 		done:     make(chan struct{}),
 		cancel:   make(chan struct{}),
@@ -134,6 +134,9 @@ func (command *Command) slurpAllOutput() (finished bool, err error) {
 		if strings.Contains(err.Error(), "OperationTimeout") {
 			// Operation timeout because there was no command output
 			return
+		}
+		if strings.Contains(err.Error(), "EOF") {
+			command.exitCode = 16001
 		}
 
 		command.Stderr.write.CloseWithError(err)
