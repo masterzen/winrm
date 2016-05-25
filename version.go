@@ -14,6 +14,9 @@ var (
 
 func GetFullVersion() string {
   var versionString bytes.Buffer
-  fmt.Fprintf(&versionString, "%s-%s", Version, GitSHA)
+  fmt.Fprintf(&versionString, "%s", Version)
+  if len(GitSHA) >= 8 {
+    fmt.Fprintf(&versionString, " (%s)", GitSHA[:8])
+  }
   return versionString.String()
 }
