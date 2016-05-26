@@ -9,7 +9,7 @@ var (
   // Git SHA Value will be set during build
   GitSHA = "N/A"
   // update this when releasing a version
-  Version = "1.0.0"
+  Version = "0.8.0"
 )
 
 func GetFullVersion() string {
