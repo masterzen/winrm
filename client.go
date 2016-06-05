@@ -85,7 +85,7 @@ func readCACerts(certs []byte) (*x509.CertPool, error) {
 
 // CreateShell will create a WinRM Shell,
 // which is the prealable for running commands.
-func (c Client) CreateShell() (*Shell, error) {
+func (c *Client) CreateShell() (*Shell, error) {
 	request := NewOpenShellRequest(c.url, &c.Parameters)
 	defer request.Free()
 

@@ -26,9 +26,8 @@ func any(node *xmlpath.Node, xpath string) (bool, error) {
 		return false, err
 	}
 
-	found := path.Exists(node)
+	return path.Exists(node), nil
 
-	return found, nil
 }
 
 func xpath(node *xmlpath.Node, xpath string) ([]xmlpath.Node, error) {
