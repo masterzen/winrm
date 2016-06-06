@@ -15,10 +15,11 @@ import (
 )
 
 func (s *WinRMSuite) TestExecuteCommand(c *C) {
-	client, err := NewClient(&Endpoint{Host: "localhost", Port: 5985}, "Administrator", "v3r1S3cre7")
+	endpoint := NewEndpoint("localhost", 5985, false, false, nil, nil, nil, 0)
+	client, err := NewClient(endpoint, "Administrator", "v3r1S3cre7")
 	c.Assert(err, IsNil)
 
-	shell := &Shell{client: client, ID: "67A74734-DD32-4F10-89DE-49A060483810"}
+	shell := &Shell{client: client, id: "67A74734-DD32-4F10-89DE-49A060483810"}
 	count := 0
 	client.http = func(client *Client, message *soap.SoapMessage) (string, error) {
 		switch count {
@@ -58,12 +59,13 @@ func (s *WinRMSuite) TestExecuteCommand(c *C) {
 }
 
 func (s *WinRMSuite) TestStdinCommand(c *C) {
-	client, err := NewClient(&Endpoint{Host: "localhost", Port: 5985}, "Administrator", "v3r1S3cre7")
+	endpoint := NewEndpoint("localhost", 5985, false, false, nil, nil, nil, 0)
+	client, err := NewClient(endpoint, "Administrator", "v3r1S3cre7")
 	c.Assert(err, IsNil)
 
 	shell := &Shell{
 		client: client,
-		ID:     "67A74734-DD32-4F10-89DE-49A060483810",
+		id:     "67A74734-DD32-4F10-89DE-49A060483810",
 	}
 
 	count := 0
@@ -94,12 +96,13 @@ func (s *WinRMSuite) TestStdinCommand(c *C) {
 }
 
 func (s *WinRMSuite) TestCommandExitCode(c *C) {
-	client, err := NewClient(&Endpoint{Host: "localhost", Port: 5985}, "Administrator", "v3r1S3cre7")
+	endpoint := NewEndpoint("localhost", 5985, false, false, nil, nil, nil, 0)
+	client, err := NewClient(endpoint, "Administrator", "v3r1S3cre7")
 	c.Assert(err, IsNil)
 
 	shell := &Shell{
 		client: client,
-		ID:     "67A74734-DD32-4F10-89DE-49A060483810",
+		id:     "67A74734-DD32-4F10-89DE-49A060483810",
 	}
 
 	count := 0
@@ -126,10 +129,11 @@ func (s *WinRMSuite) TestCommandExitCode(c *C) {
 }
 
 func (s *WinRMSuite) TestCloseCommandStopsFetch(c *C) {
-	client, err := NewClient(&Endpoint{Host: "localhost", Port: 5985}, "Administrator", "v3r1S3cre7")
+	endpoint := NewEndpoint("localhost", 5985, false, false, nil, nil, nil, 0)
+	client, err := NewClient(endpoint, "Administrator", "v3r1S3cre7")
 	c.Assert(err, IsNil)
 
-	shell := &Shell{client: client, ID: "67A74734-DD32-4F10-89DE-49A060483810"}
+	shell := &Shell{client: client, id: "67A74734-DD32-4F10-89DE-49A060483810"}
 
 	http := make(chan string)
 	client.http = func(client *Client, message *soap.SoapMessage) (string, error) {
@@ -203,10 +207,11 @@ func (s *WinRMSuite) TestConnectionTimeout(c *C) {
 		c.Error(err)
 	}
 
-	client, err := NewClient(&Endpoint{Host: host, Port: port, Timeout: 1 * time.Second}, "Administrator", "v3r1S3cre7")
+	endpoint := NewEndpoint(host, port, false, false, nil, nil, nil, 1*time.Second)
+	client, err := NewClient(endpoint, "Administrator", "v3r1S3cre7")
 	c.Assert(err, IsNil)
 
-	shell := &Shell{client: client, ID: "67A74734-DD32-4F10-89DE-49A060483810"}
+	shell := &Shell{client: client, id: "67A74734-DD32-4F10-89DE-49A060483810"}
 	_, err = shell.Execute("ipconfig /all")
 	c.Assert(err, ErrorMatches, ".*timeout.*")
 }
@@ -244,10 +249,11 @@ func (s *WinRMSuite) TestOperationTimeoutSupport(c *C) {
 		c.Error(err)
 	}
 
-	client, err := NewClient(&Endpoint{Host: host, Port: port}, "Administrator", "v3r1S3cre7")
+	endpoint := NewEndpoint(host, port, false, false, nil, nil, nil, 0)
+	client, err := NewClient(endpoint, "Administrator", "v3r1S3cre7")
 	c.Assert(err, IsNil)
 
-	shell := &Shell{client: client, ID: "67A74734-DD32-4F10-89DE-49A060483810"}
+	shell := &Shell{client: client, id: "67A74734-DD32-4F10-89DE-49A060483810"}
 	command, _ := shell.Execute("ipconfig /all")
 	var stdout, stderr bytes.Buffer
 	var wg sync.WaitGroup
@@ -266,7 +272,8 @@ func (s *WinRMSuite) TestOperationTimeoutSupport(c *C) {
 
 func (s *WinRMSuite) TestEOFError(c *C) {
 	count := 0
-	client, err := NewClient(&Endpoint{Host: "localhost", Port: 5985}, "Administrator", "v3r1S3cre7")
+	endpoint := NewEndpoint("localhost", 5985, false, false, nil, nil, nil, 0)
+	client, err := NewClient(endpoint, "Administrator", "v3r1S3cre7")
 	c.Assert(err, IsNil)
 
 	// simulating a dropped client connection
@@ -282,7 +289,7 @@ func (s *WinRMSuite) TestEOFError(c *C) {
 		}
 	}
 
-	shell := &Shell{client: client, ID: "67A74734-DD32-4F10-89DE-49A060483810"}
+	shell := &Shell{client: client, id: "67A74734-DD32-4F10-89DE-49A060483810"}
 	command, _ := shell.Execute("ipconfig /all")
 
 	command.Wait()

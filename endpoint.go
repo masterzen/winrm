@@ -8,12 +8,23 @@ import (
 // Endpoint struct holds configurations
 // for the server endpoint
 type Endpoint struct {
-	Host     string
-	Port     int
-	HTTPS    bool
+	// host name or ip address
+	Host string
+	// port to determine if it's http or https default
+	// winrm ports (http:5985, https:5986).Versions
+	// of winrm can be customized to listen on other ports
+	Port int
+	// set the flag true for https connections
+	HTTPS bool
+	// set the flag true for skipping ssl verifications
 	Insecure bool
-	CACert   *[]byte
-	Timeout  time.Duration
+	// pointer pem certs, and key
+	CACert []byte // cert auth to intdetify the server cert
+	Key    []byte // public key for client auth connections
+	Cert   []byte // cert for client auth connections
+	// duration timeout for the underling tcp conn(http/https base protocol)
+	// if the time exceeds the connection is cloded/timeouts
+	Timeout time.Duration
 }
 
 func (ep *Endpoint) url() string {
@@ -28,25 +39,23 @@ func (ep *Endpoint) url() string {
 }
 
 // NewEndpoint returns new pointer to struct Endpoint, with a default 60s response header timeout
-func NewEndpoint(host string, port int, https bool, insecure bool, cert *[]byte) *Endpoint {
-	return &Endpoint{
+func NewEndpoint(host string, port int, https bool, insecure bool, Cacert, cert, key []byte, timeout time.Duration) *Endpoint {
+	endpoint := &Endpoint{
 		Host:     host,
 		Port:     port,
 		HTTPS:    https,
 		Insecure: insecure,
-		CACert:   cert,
-		Timeout:  60 * time.Second,
+		CACert:   Cacert,
+		Key:      key,
+		Cert:     cert,
 	}
-}
+	// if the timeout was set
+	if timeout != 0 {
+		endpoint.Timeout = timeout
+	} else {
+		// assign default 60sec timeout
+		endpoint.Timeout = 60 * time.Second
+	}
 
-// NewEndpointWithTimeout returns a new Endpoint with a defined timeout
-func NewEndpointWithTimeout(host string, port int, https bool, insecure bool, cert *[]byte, timeout time.Duration) *Endpoint {
-	return &Endpoint{
-		Host:     host,
-		Port:     port,
-		HTTPS:    https,
-		Insecure: insecure,
-		CACert:   cert,
-		Timeout:  timeout,
-	}
+	return endpoint
 }

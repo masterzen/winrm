@@ -17,11 +17,11 @@ func (s *WinRMSuite) TestEndpointUrlHttps(c *C) {
 }
 
 func (s *WinRMSuite) TestEndpointWithDefaultTimeout(c *C) {
-	endpoint := NewEndpoint("test", 5585, false, false, nil)
+	endpoint := NewEndpoint("test", 5585, false, false, nil, nil, nil, 0)
 	c.Assert(endpoint.Timeout, Equals, 60*time.Second)
 }
 
 func (s *WinRMSuite) TestEndpointWithTimeout(c *C) {
-	endpoint := NewEndpointWithTimeout("test", 5585, false, false, nil, 120*time.Second)
+	endpoint := NewEndpoint("test", 5585, false, false, nil, nil, nil, 120*time.Second)
 	c.Assert(endpoint.Timeout, Equals, 120*time.Second)
 }
