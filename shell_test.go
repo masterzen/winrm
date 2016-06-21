@@ -12,7 +12,8 @@ func (s *WinRMSuite) TestShellExecuteResponse(c *C) {
 
 	shell := &Shell{client: client, id: "67A74734-DD32-4F10-89DE-49A060483810"}
 	first := true
-	client.http = func(client *Client, message *soap.SoapMessage) (string, error) {
+	r := Requester{}
+	r.http = func(client *Client, message *soap.SoapMessage) (string, error) {
 		if first {
 			c.Assert(message.String(), Contains, "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Command")
 			first = false
@@ -22,7 +23,7 @@ func (s *WinRMSuite) TestShellExecuteResponse(c *C) {
 			return outputResponse, nil
 		}
 	}
-
+	client.http = r
 	command, _ := shell.Execute("ipconfig /all")
 	c.Assert(command.id, Equals, "1A6DEE6B-EC68-4DD6-87E9-030C0048ECC4")
 }
@@ -33,10 +34,12 @@ func (s *WinRMSuite) TestShellCloseResponse(c *C) {
 	c.Assert(err, IsNil)
 
 	shell := &Shell{client: client, id: "67A74734-DD32-4F10-89DE-49A060483810"}
-	client.http = func(client *Client, message *soap.SoapMessage) (string, error) {
+	r := Requester{}
+	r.http = func(client *Client, message *soap.SoapMessage) (string, error) {
 		c.Assert(message.String(), Contains, "http://schemas.xmlsoap.org/ws/2004/09/transfer/Delete")
 		return "", nil
 	}
+	client.http = r
 
 	shell.Close()
 }
