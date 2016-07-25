@@ -207,12 +207,12 @@ oVExlP9JZuW8t5Zoe1tZyQt21xGjO6Kvjm03T+Bsy9AQfB+P2UrU6K0MolI=
 func (s *WinRMSuite) TestReplaceTransportWithDecorator(c *C) {
 	params := NewParameters("PT60S", "en-US", 153600)
 	params.TransportDecorator = func() Transporter {
-		return &clientAuthRequest{}
+		return &ClientAuthRequest{}
 	}
 
 	endpoint := NewEndpoint("localhost", 5986, false, false, nil, []byte(cert), []byte(key), 0)
 	client, err := NewClientWithParameters(endpoint, "Administrator", "password", params)
 	c.Assert(err, IsNil)
-	_, ok := client.http.(*clientAuthRequest)
+	_, ok := client.http.(*ClientAuthRequest)
 	c.Assert(ok, Equals, true)
 }

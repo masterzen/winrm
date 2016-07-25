@@ -11,11 +11,11 @@ import (
 	"github.com/masterzen/winrm/soap"
 )
 
-type clientAuthRequest struct {
+type ClientAuthRequest struct {
 	transport http.RoundTripper
 }
 
-func (c *clientAuthRequest) Transport(endpoint *Endpoint) error {
+func (c *ClientAuthRequest) Transport(endpoint *Endpoint) error {
 	cert, err := tls.X509KeyPair(endpoint.Cert, endpoint.Key)
 	if err != nil {
 		return err
@@ -66,7 +66,7 @@ func parse(response *http.Response) (string, error) {
 	return "", fmt.Errorf("invalid content type")
 }
 
-func (c clientAuthRequest) Post(client *Client, request *soap.SoapMessage) (string, error) {
+func (c ClientAuthRequest) Post(client *Client, request *soap.SoapMessage) (string, error) {
 	httpClient := &http.Client{Transport: c.transport}
 
 	req, err := http.NewRequest("POST", client.url, strings.NewReader(request.String()))
