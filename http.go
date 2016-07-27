@@ -80,9 +80,14 @@ func (c clientRequest) Post(client *Client, request *soap.SoapMessage) (string, 
 	if err != nil {
 		return "", fmt.Errorf("http response error: %d - %s", resp.StatusCode, err.Error())
 	}
-	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("http error: %d - %s", resp.StatusCode, body)
-	}
+
+	// if we have different 200 http status code
+	// we must replace the error
+	defer func() {
+		if resp.StatusCode != 200 {
+			body, err = "", fmt.Errorf("http error %d: %s", resp.StatusCode, body)
+		}
+	}()
 
 	return body, err
 }
