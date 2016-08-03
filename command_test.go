@@ -21,7 +21,8 @@ func (s *WinRMSuite) TestExecuteCommand(c *C) {
 
 	shell := &Shell{client: client, id: "67A74734-DD32-4F10-89DE-49A060483810"}
 	count := 0
-	client.http = func(client *Client, message *soap.SoapMessage) (string, error) {
+	r := Requester{}
+	r.http = func(client *Client, message *soap.SoapMessage) (string, error) {
 		switch count {
 		case 0:
 			{
@@ -41,7 +42,7 @@ func (s *WinRMSuite) TestExecuteCommand(c *C) {
 			}
 		}
 	}
-
+	client.http = r
 	command, _ := shell.Execute("ipconfig /all")
 	var stdout, stderr bytes.Buffer
 	var wg sync.WaitGroup
@@ -69,8 +70,8 @@ func (s *WinRMSuite) TestStdinCommand(c *C) {
 	}
 
 	count := 0
-
-	client.http = func(client *Client, message *soap.SoapMessage) (string, error) {
+	r := Requester{}
+	r.http = func(client *Client, message *soap.SoapMessage) (string, error) {
 		if strings.Contains(message.String(), "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Send") {
 			c.Assert(message.String(), Contains, "c3RhbmRhcmQgaW5wdXQ=")
 			return "", nil
@@ -85,7 +86,7 @@ func (s *WinRMSuite) TestStdinCommand(c *C) {
 			}
 		}
 	}
-
+	client.http = r
 	command, _ := shell.Execute("ipconfig /all")
 	command.Stdin.Write([]byte("standard input"))
 	// slurp output from command
@@ -106,8 +107,8 @@ func (s *WinRMSuite) TestCommandExitCode(c *C) {
 	}
 
 	count := 0
-
-	client.http = func(client *Client, message *soap.SoapMessage) (string, error) {
+	r := Requester{}
+	r.http = func(client *Client, message *soap.SoapMessage) (string, error) {
 		defer func() { count++ }()
 		switch count {
 		case 0:
@@ -119,7 +120,7 @@ func (s *WinRMSuite) TestCommandExitCode(c *C) {
 			return doneCommandExitCode0Response, nil
 		}
 	}
-
+	client.http = r
 	command, _ := shell.Execute("ipconfig /all")
 
 	command.Wait()
@@ -136,7 +137,8 @@ func (s *WinRMSuite) TestCloseCommandStopsFetch(c *C) {
 	shell := &Shell{client: client, id: "67A74734-DD32-4F10-89DE-49A060483810"}
 
 	http := make(chan string)
-	client.http = func(client *Client, message *soap.SoapMessage) (string, error) {
+	r := Requester{}
+	r.http = func(client *Client, message *soap.SoapMessage) (string, error) {
 		switch {
 		case strings.Contains(message.String(), "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Receive"):
 			c.Log("Request for command output received by server")
@@ -153,7 +155,7 @@ func (s *WinRMSuite) TestCloseCommandStopsFetch(c *C) {
 			return "", nil
 		}
 	}
-
+	client.http = r
 	command, _ := shell.Execute("ipconfig /all")
 	// need to be reading Stdout/Stderr, otherwise, the writes to these are blocking...
 	go ioutil.ReadAll(command.Stdout)
@@ -275,9 +277,9 @@ func (s *WinRMSuite) TestEOFError(c *C) {
 	endpoint := NewEndpoint("localhost", 5985, false, false, nil, nil, nil, 0)
 	client, err := NewClient(endpoint, "Administrator", "v3r1S3cre7")
 	c.Assert(err, IsNil)
-
+	r := Requester{}
 	// simulating a dropped client connection
-	client.http = func(client *Client, message *soap.SoapMessage) (string, error) {
+	r.http = func(client *Client, message *soap.SoapMessage) (string, error) {
 		defer func() { count++ }()
 		switch count {
 		case 0:
@@ -288,7 +290,7 @@ func (s *WinRMSuite) TestEOFError(c *C) {
 			return doneCommandExitCode0Response, nil
 		}
 	}
-
+	client.http = r
 	shell := &Shell{client: client, id: "67A74734-DD32-4F10-89DE-49A060483810"}
 	command, _ := shell.Execute("ipconfig /all")
 
