@@ -5,8 +5,8 @@ import (
 	"io/ioutil"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/core/http"
-	"github.com/Azure/azure-sdk-for-go/core/tls"
+	"github.com/masterzen/azure-sdk-for-go/core/http"
+	"github.com/masterzen/azure-sdk-for-go/core/tls"
 
 	"github.com/masterzen/winrm/soap"
 )
