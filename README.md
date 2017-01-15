@@ -105,6 +105,33 @@ if err != nil {
 
 ```
 
+By passing a TransportDecorator in the Parameters struct it is possible to use different Transports (e.g. NTLM)
+
+```go
+package main
+import (
+  "github.com/masterzen/winrm"
+  "fmt"
+  "os"
+)
+
+endpoint := winrm.NewEndpoint("localhost", 5985, false, false, nil, nil, nil, 0)
+
+params := DefaultParameters
+params.TransportDecorator = func() Transporter { return &ClientNTLM{} }
+
+client, err := NewClientWithParameters(endpoint, "test", "test", params)
+if err != nil {
+	panic(err)
+}
+
+_, err := client.RunWithInput("ipconfig", os.Stdout, os.Stderr, os.Stdin)
+if err != nil {
+	panic(err)
+}
+
+```
+
 For a more complex example, it is possible to call the various functions directly:
 
 ```go
@@ -185,7 +212,7 @@ and [Bazaar](http://bazaar.canonical.com/en/) to be installed.
 Winrm itself doesn't require these, but a dependency of a dependency does.
 
 Next, clone this repository into `$GOPATH/src/github.com/masterzen/winrm` and
-then just type `make`. 
+then just type `make`.
 
 You can run tests by typing `make test`.
 
