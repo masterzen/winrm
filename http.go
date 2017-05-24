@@ -44,7 +44,7 @@ func (c *clientRequest) Transport(endpoint *Endpoint) error {
 		Proxy: http.ProxyFromEnvironment,
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: endpoint.Insecure,
-			ServerName: endpoint.TLSServerName,
+			ServerName:         endpoint.TLSServerName,
 		},
 		ResponseHeaderTimeout: endpoint.Timeout,
 	}
