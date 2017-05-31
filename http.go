@@ -4,8 +4,10 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/masterzen/winrm/soap"
 )
@@ -46,6 +48,10 @@ func (c *clientRequest) Transport(endpoint *Endpoint) error {
 			InsecureSkipVerify: endpoint.Insecure,
 			ServerName:         endpoint.TLSServerName,
 		},
+		Dial: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).Dial,
 		ResponseHeaderTimeout: endpoint.Timeout,
 	}
 

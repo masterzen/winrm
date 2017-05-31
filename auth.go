@@ -3,7 +3,9 @@ package winrm
 import (
 	"fmt"
 	"io/ioutil"
+	"net"
 	"strings"
+	"time"
 
 	"github.com/masterzen/azure-sdk-for-go/core/http"
 	"github.com/masterzen/azure-sdk-for-go/core/tls"
@@ -26,6 +28,10 @@ func (c *ClientAuthRequest) Transport(endpoint *Endpoint) error {
 			InsecureSkipVerify: endpoint.Insecure,
 			Certificates:       []tls.Certificate{cert},
 		},
+		Dial: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).Dial,
 		ResponseHeaderTimeout: endpoint.Timeout,
 	}
 
