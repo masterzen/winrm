@@ -24,6 +24,7 @@ func (c *ClientAuthRequest) Transport(endpoint *Endpoint) error {
 	}
 
 	transport := &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: endpoint.Insecure,
 			Certificates:       []tls.Certificate{cert},
