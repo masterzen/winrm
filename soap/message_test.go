@@ -17,10 +17,10 @@ func (s *MySuite) TestNewMessage(c *C) {
 		AddOption(NewHeaderOption("WINRS_CODEPAGE", "65001")).
 		Build()
 
-	body := message.CreateBodyElement("Shell", NS_WIN_SHELL)
-	input := message.CreateElement(body, "InputStreams", NS_WIN_SHELL)
+	body := message.CreateBodyElement("Shell", DOM_NS_WIN_SHELL)
+	input := message.CreateElement(body, "InputStreams", DOM_NS_WIN_SHELL)
 	input.SetContent("stdin")
-	output := message.CreateElement(body, "OutputStreams", NS_WIN_SHELL)
+	output := message.CreateElement(body, "OutputStreams", DOM_NS_WIN_SHELL)
 	output.SetContent("stdout stderr")
 
 	expected := `<?xml version="1.0" encoding="utf-8" ?>

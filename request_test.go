@@ -4,9 +4,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/masterzen/simplexml/dom"
+	"github.com/ChrisTrenkamp/goxpath"
+	"github.com/ChrisTrenkamp/goxpath/tree"
+	"github.com/ChrisTrenkamp/goxpath/tree/xmltree"
 	"github.com/masterzen/winrm/soap"
-	"github.com/masterzen/xmlpath"
+	"github.com/masterzen/simplexml/dom"
 	. "gopkg.in/check.v1"
 )
 
@@ -93,19 +95,17 @@ func (s *WinRMSuite) TestSignalRequest(c *C) {
 }
 
 func assertXPath(c *C, doc *dom.Document, request string, expected string) {
-	root, path, err := parseXPath(doc, request)
+	nodes, err := parseXPath(doc, request)
 
 	if err != nil {
 		c.Fatalf("Xpath %s gives error %s", request, err)
 	}
 
-	ok := path.Exists(root)
-	c.Assert(ok, Equals, true)
+	c.Assert(len(nodes), Not(Equals), 0)
 
 	var foundValue string
-	iter := path.Iter(root)
-	for iter.Next() {
-		foundValue = iter.Node().String()
+	for _, i := range nodes {
+		foundValue = i.ResValue()
 		if foundValue == expected {
 			break
 		}
@@ -117,27 +117,26 @@ func assertXPath(c *C, doc *dom.Document, request string, expected string) {
 }
 
 func assertXPathNil(c *C, doc *dom.Document, request string) {
-	root, path, err := parseXPath(doc, request)
+	nodes, err := parseXPath(doc, request)
 
 	if err != nil {
 		c.Fatalf("Xpath %s gives error %s", request, err)
 	}
 
-	ok := path.Exists(root)
-	c.Assert(ok, Equals, false)
+	c.Assert(len(nodes), Equals, 0)
 }
 
-func parseXPath(doc *dom.Document, request string) (*xmlpath.Node, *xmlpath.Path, error) {
+func parseXPath(doc *dom.Document, request string) (tree.NodeSet, error) {
 	content := strings.NewReader(doc.String())
-	node, err := xmlpath.Parse(content)
+	body, err := xmltree.ParseXML(content)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	path, err := xmlpath.CompileWithNamespace(request, soap.GetAllNamespaces())
+	xpExec := goxpath.MustParse(request)
+	nodes, err := xpExec.ExecNode(body, soap.GetAllXPathNamespaces())
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-
-	return node, path, nil
+	return nodes, nil
 }

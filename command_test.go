@@ -136,13 +136,13 @@ func (s *WinRMSuite) TestCloseCommandStopsFetch(c *C) {
 
 	shell := &Shell{client: client, id: "67A74734-DD32-4F10-89DE-49A060483810"}
 
-	http := make(chan string)
+	httpChan := make(chan string)
 	r := Requester{}
 	r.http = func(client *Client, message *soap.SoapMessage) (string, error) {
 		switch {
 		case strings.Contains(message.String(), "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Receive"):
 			c.Log("Request for command output received by server")
-			r := <-http
+			r := <-httpChan
 			c.Log("Returning command output")
 			return r, nil
 		case strings.Contains(message.String(), "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Command"):
@@ -161,19 +161,19 @@ func (s *WinRMSuite) TestCloseCommandStopsFetch(c *C) {
 	go ioutil.ReadAll(command.Stdout)
 	go ioutil.ReadAll(command.Stderr)
 
-	http <- outputResponse // wait for command to enter fetch/slurp
+	httpChan <- outputResponse // wait for command to enter fetch/slurp
 
 	command.Close()
 
 	select {
-	case http <- outputResponse: // return to fetch from slurp
+	case httpChan <- outputResponse: // return to fetch from slurp
 		c.Log("Fetch loop 'drained' one last reponse before realizing that the command is now closed")
 	case <-time.After(1 * time.Second):
 		c.Log("no poll within one second, fetch may have stopped")
 	}
 
 	select {
-	case http <- outputResponse:
+	case httpChan <- outputResponse:
 		c.Log("Fetch loop is still polling after command.Close()")
 		c.FailNow()
 	case <-time.After(1 * time.Second):
