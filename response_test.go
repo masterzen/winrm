@@ -2,6 +2,7 @@ package winrm
 
 import (
 	"bytes"
+
 	. "gopkg.in/check.v1"
 )
 

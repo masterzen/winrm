@@ -1,9 +1,10 @@
 package soap
 
 import (
+	"testing"
+
 	"github.com/masterzen/simplexml/dom"
 	. "gopkg.in/check.v1"
-	"testing"
 )
 
 // Hook up gocheck into the "go test" runner.
@@ -25,7 +26,7 @@ func initDocument() (h *SoapHeader) {
 	e := dom.CreateElement("Envelope")
 	doc.SetRoot(e)
 	AddUsualNamespaces(e)
-	NS_SOAP_ENV.SetTo(e)
+	DOM_NS_SOAP_ENV.SetTo(e)
 	h = &SoapHeader{message: &SoapMessage{document: doc, envelope: e}}
 	return
 }

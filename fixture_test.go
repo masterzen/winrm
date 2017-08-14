@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/masterzen/xmlpath"
+	"github.com/ChrisTrenkamp/goxpath/tree/xmltree"
 	. "gopkg.in/check.v1"
 )
 
@@ -100,11 +100,11 @@ func matches(haystack, needle interface{}) (result bool, error string) {
 
 // FindHostAndPortFromURL extracts the host and port part of a full url (like http://address:port/path#fragment)
 func FindHostAndPortFromURL(rawurl string) (string, int, error) {
-	url, err := url.Parse(rawurl)
+	parsed, err := url.Parse(rawurl)
 	if err != nil {
 		return "", 0, err
 	}
-	host, port, err := net.SplitHostPort(url.Host)
+	host, port, err := net.SplitHostPort(parsed.Host)
 	if err != nil {
 		return "", 0, err
 	}
@@ -140,14 +140,16 @@ func runWinRMFakeServer(c *C, expectedStdin string) (*httptest.Server, string, i
 			fmt.Fprintln(w, executeCommandResponse)
 		} else if strings.Contains(body, "shell/Send") {
 			var stdin bytes.Buffer
-			doc, err := xmlpath.Parse(strings.NewReader(body))
+			doc, err := xmltree.ParseXML(strings.NewReader(body))
 			c.Assert(err, IsNil)
-			stdins, _ := xpath(doc, "//rsp:Stream[@Name='stdin']")
+			stdins, err := xPath(doc, "//rsp:Stream[@Name='stdin']")
+			c.Assert(err, IsNil)
 			for _, node := range stdins {
-				content, _ := base64.StdEncoding.DecodeString(node.String())
+				content, _ := base64.StdEncoding.DecodeString(node.ResValue())
 				stdin.Write(content)
 			}
 			c.Assert(stdin.String(), Equals, expectedStdin)
+
 			w.WriteHeader(http.StatusOK)
 		} else if strings.Contains(body, "shell/Receive") && count == 0 {
 			count = 1
