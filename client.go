@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io"
+	"net/http"
 	"sync"
 
 	"github.com/masterzen/winrm/soap"
@@ -13,11 +14,12 @@ import (
 // Client struct
 type Client struct {
 	Parameters
-	username string
-	password string
-	useHTTPS bool
-	url      string
-	http     Transporter
+	HttpClient *http.Client
+	username   string
+	password   string
+	useHTTPS   bool
+	url        string
+	http       Transporter
 }
 
 // Transporter does different transporters
@@ -25,7 +27,7 @@ type Client struct {
 type Transporter interface {
 	// init request baset on the transport configurations
 	Post(*Client, *soap.SoapMessage) (string, error)
-	Transport(*Endpoint) error
+	Transport(*Endpoint) (http.RoundTripper, error)
 }
 
 // NewClient will create a new remote client on url, connecting with user and password
@@ -55,10 +57,12 @@ func NewClientWithParameters(endpoint *Endpoint, user, password string, params *
 	}
 
 	// set the transport to some endpoint configuration
-	if err := client.http.Transport(endpoint); err != nil {
+	transport, err := client.http.Transport(endpoint);
+	if err != nil {
 		return nil, fmt.Errorf("Can't parse this key and certs: %s", err)
 	}
 
+	client.HttpClient = &http.Client{Transport: transport}
 	return client, nil
 }
 

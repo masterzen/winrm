@@ -1,6 +1,8 @@
 package winrm
 
 import (
+	"net/http"
+
 	"github.com/Azure/go-ntlmssp"
 	"github.com/masterzen/winrm/soap"
 )
@@ -11,10 +13,11 @@ type ClientNTLM struct {
 }
 
 // Transport creates the wrapped NTLM transport
-func (c *ClientNTLM) Transport(endpoint *Endpoint) error {
+func (c *ClientNTLM) Transport(endpoint *Endpoint) (http.RoundTripper, error) {
 	c.clientRequest.Transport(endpoint)
-	c.clientRequest.transport = &ntlmssp.Negotiator{RoundTripper: c.clientRequest.transport}
-	return nil
+	transport := &ntlmssp.Negotiator{RoundTripper: c.clientRequest.transport}
+	c.clientRequest.transport = transport
+	return transport, nil
 }
 
 // Post make post to the winrm soap service (forwarded to clientRequest implementation)

@@ -41,7 +41,7 @@ type clientRequest struct {
 	transport http.RoundTripper
 }
 
-func (c *clientRequest) Transport(endpoint *Endpoint) error {
+func (c *clientRequest) Transport(endpoint *Endpoint) (http.RoundTripper, error) {
 	transport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		TLSClientConfig: &tls.Config{
@@ -58,28 +58,25 @@ func (c *clientRequest) Transport(endpoint *Endpoint) error {
 	if endpoint.CACert != nil && len(endpoint.CACert) > 0 {
 		certPool, err := readCACerts(endpoint.CACert)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		transport.TLSClientConfig.RootCAs = certPool
 	}
 
 	c.transport = transport
-
-	return nil
+	return transport, nil
 }
 
 // Post make post to the winrm soap service
 func (c clientRequest) Post(client *Client, request *soap.SoapMessage) (string, error) {
-	httpClient := &http.Client{Transport: c.transport}
-
 	req, err := http.NewRequest("POST", client.url, strings.NewReader(request.String()))
 	if err != nil {
 		return "", fmt.Errorf("impossible to create http request %s", err)
 	}
 	req.Header.Set("Content-Type", soapXML+";charset=UTF-8")
 	req.SetBasicAuth(client.username, client.password)
-	resp, err := httpClient.Do(req)
+	resp, err := client.HttpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("unknown error %s", err)
 	}

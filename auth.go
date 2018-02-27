@@ -1,14 +1,13 @@
 package winrm
 
 import (
+	"crypto/tls"
 	"fmt"
 	"io/ioutil"
 	"net"
+	"net/http"
 	"strings"
 	"time"
-
-	"github.com/masterzen/azure-sdk-for-go/core/http"
-	"github.com/masterzen/azure-sdk-for-go/core/tls"
 
 	"github.com/masterzen/winrm/soap"
 )
@@ -17,10 +16,10 @@ type ClientAuthRequest struct {
 	transport http.RoundTripper
 }
 
-func (c *ClientAuthRequest) Transport(endpoint *Endpoint) error {
+func (c *ClientAuthRequest) Transport(endpoint *Endpoint) (http.RoundTripper, error) {
 	cert, err := tls.X509KeyPair(endpoint.Cert, endpoint.Key)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	transport := &http.Transport{
@@ -39,15 +38,14 @@ func (c *ClientAuthRequest) Transport(endpoint *Endpoint) error {
 	if endpoint.CACert != nil && len(endpoint.CACert) > 0 {
 		certPool, err := readCACerts(endpoint.CACert)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		transport.TLSClientConfig.RootCAs = certPool
 	}
 
 	c.transport = transport
-
-	return nil
+	return transport, nil
 }
 
 // parse func reads the response body and return it as a string
@@ -74,8 +72,6 @@ func parse(response *http.Response) (string, error) {
 }
 
 func (c ClientAuthRequest) Post(client *Client, request *soap.SoapMessage) (string, error) {
-	httpClient := &http.Client{Transport: c.transport}
-
 	req, err := http.NewRequest("POST", client.url, strings.NewReader(request.String()))
 	if err != nil {
 		return "", fmt.Errorf("impossible to create http request %s", err)
@@ -84,7 +80,7 @@ func (c ClientAuthRequest) Post(client *Client, request *soap.SoapMessage) (stri
 	req.Header.Set("Content-Type", soapXML+";charset=UTF-8")
 	req.Header.Set("Authorization", "http://schemas.dmtf.org/wbem/wsman/1/wsman/secprofile/https/mutual")
 
-	resp, err := httpClient.Do(req)
+	resp, err := client.HttpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("unknown error %s", err)
 	}

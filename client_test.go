@@ -20,7 +20,7 @@ func (r Requester) Post(client *Client, request *soap.SoapMessage) (string, erro
 	return r.http(client, request)
 }
 
-func (r Requester) Transport(endpoint *Endpoint) error {
+func (r Requester) Transport(endpoint *Endpoint) (http.RoundTripper, error) {
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: endpoint.Insecure,
@@ -31,15 +31,14 @@ func (r Requester) Transport(endpoint *Endpoint) error {
 	if endpoint.CACert != nil && len(endpoint.CACert) > 0 {
 		certPool, err := readCACerts(endpoint.CACert)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		transport.TLSClientConfig.RootCAs = certPool
 	}
 
 	r.transport = transport
-
-	return nil
+	return transport, nil
 
 }
 
