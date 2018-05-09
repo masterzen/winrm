@@ -225,8 +225,11 @@ func min(a int, b int) int {
 // Close method wrapper
 // commandWriter implements io.Closer interface
 func (w *commandWriter) Close() error {
+	if w.eof {
+		return errors.New("commandWriter already closed")
+	}
 	w.eof = true
-	return w.Close()
+	return w.sendInput(nil)
 }
 
 // Read data from this Pipe

@@ -130,6 +130,9 @@ func NewSendInputRequest(uri, shellId, commandId string, input []byte, params *P
 	streams := message.CreateElement(send, "Stream", soap.DOM_NS_WIN_SHELL)
 	streams.SetAttr("Name", "stdin")
 	streams.SetAttr("CommandId", commandId)
+	if len(input) == 0 {
+		streams.SetAttr("End", "true")
+	}
 	streams.SetContent(content)
 	return message
 }

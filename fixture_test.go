@@ -145,6 +145,11 @@ func runWinRMFakeServer(c *C, expectedStdin string) (*httptest.Server, string, i
 			stdins, err := xPath(doc, "//rsp:Stream[@Name='stdin']")
 			c.Assert(err, IsNil)
 			for _, node := range stdins {
+				end, err := any(node, "//[@End='true']")
+				c.Assert(err, IsNil)
+				if end {
+					expectedStdin = ""
+				}
 				content, _ := base64.StdEncoding.DecodeString(node.ResValue())
 				stdin.Write(content)
 			}

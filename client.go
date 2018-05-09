@@ -149,6 +149,7 @@ func (c *Client) RunWithString(command string, stdin string) (string, string, in
 	}
 	if len(stdin) > 0 {
 		cmd.Stdin.Write([]byte(stdin))
+		cmd.Stdin.Close()
 	}
 
 	var outWriter, errWriter bytes.Buffer
@@ -192,6 +193,7 @@ func (c Client) RunWithInput(command string, stdout, stderr io.Writer, stdin io.
 	go func() {
 		defer wg.Done()
 		io.Copy(cmd.Stdin, stdin)
+		cmd.Stdin.Close()
 	}()
 	go func() {
 		defer wg.Done()
