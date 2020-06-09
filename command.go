@@ -226,7 +226,7 @@ func min(a int, b int) int {
 // commandWriter implements io.Closer interface
 func (w *commandWriter) Close() error {
 	w.eof = true
-	return w.Close()
+        return nil
 }
 
 // Read data from this Pipe
