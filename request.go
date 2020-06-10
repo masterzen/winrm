@@ -112,7 +112,7 @@ func NewGetOutputRequest(uri, shellId, commandId, streams string, params *Parame
 	return message
 }
 
-func NewSendInputRequest(uri, shellId, commandId string, input []byte, params *Parameters) *soap.SoapMessage {
+func NewSendInputRequest(uri, shellId, commandId string, input []byte, eof bool, params *Parameters) *soap.SoapMessage {
 	if params == nil {
 		params = DefaultParameters
 	}
@@ -131,7 +131,7 @@ func NewSendInputRequest(uri, shellId, commandId string, input []byte, params *P
 	streams.SetAttr("Name", "stdin")
 	streams.SetAttr("CommandId", commandId)
 	streams.SetContent(content)
-	if input == nil {
+	if eof {
 		streams.SetAttr("End", "true")
 	}
 	return message

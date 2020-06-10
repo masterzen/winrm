@@ -7,8 +7,8 @@ import (
 	"github.com/ChrisTrenkamp/goxpath"
 	"github.com/ChrisTrenkamp/goxpath/tree"
 	"github.com/ChrisTrenkamp/goxpath/tree/xmltree"
-	"github.com/masterzen/winrm/soap"
 	"github.com/masterzen/simplexml/dom"
+	"github.com/masterzen/winrm/soap"
 	. "gopkg.in/check.v1"
 )
 
@@ -75,13 +75,22 @@ func (s *WinRMSuite) TestGetOutputRequest(c *C) {
 }
 
 func (s *WinRMSuite) TestSendInputRequest(c *C) {
-	request := NewSendInputRequest("http://localhost", "SHELLID", "COMMANDID", []byte{31, 32}, nil)
+	request := NewSendInputRequest("http://localhost", "SHELLID", "COMMANDID", []byte{31, 32}, true, nil)
 	defer request.Free()
 
 	assertXPath(c, request.Doc(), "//a:Action", "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Send")
 	assertXPath(c, request.Doc(), "//a:To", "http://localhost")
 	assertXPath(c, request.Doc(), "//w:Selector[@Name=\"ShellId\"]", "SHELLID")
 	assertXPath(c, request.Doc(), "//rsp:Send/rsp:Stream[@CommandId=\"COMMANDID\"]", "HyA=")
+	assertXPath(c, request.Doc(), "//rsp:Send/rsp:Stream[@CommandId=\"COMMANDID\"]/@End", "true")
+}
+
+func (s *WinRMSuite) TestSendInputRequestNoEOF(c *C) {
+	request := NewSendInputRequest("http://localhost", "SHELLID", "COMMANDID", []byte{31, 32}, false, nil)
+	defer request.Free()
+
+	assertXPath(c, request.Doc(), "//rsp:Send/rsp:Stream[@CommandId=\"COMMANDID\"]", "HyA=")
+	assertXPathNil(c, request.Doc(), "//rsp:Send/rsp:Stream[@CommandId=\"COMMANDID\"]/@End")
 }
 
 func (s *WinRMSuite) TestSignalRequest(c *C) {

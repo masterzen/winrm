@@ -167,12 +167,12 @@ func (c *Command) slurpAllOutput() (bool, error) {
 	return finished, nil
 }
 
-func (c *Command) sendInput(data []byte) error {
+func (c *Command) sendInput(data []byte, eof bool) error {
 	if err := c.check(); err != nil {
 		return err
 	}
 
-	request := NewSendInputRequest(c.client.url, c.shell.id, c.id, data, &c.client.Parameters)
+	request := NewSendInputRequest(c.client.url, c.shell.id, c.id, data, eof, &c.client.Parameters)
 	defer request.Free()
 
 	_, err := c.client.sendRequest(request)
@@ -193,10 +193,6 @@ func (c *Command) Wait() {
 // Write data to this Pipe
 // commandWriter implements io.Writer interface
 func (w *commandWriter) Write(data []byte) (int, error) {
-	if w.eof {
-		return 0, w.sendInput(nil)
-	}
-
 	var (
 		written int
 		err     error
@@ -205,7 +201,12 @@ func (w *commandWriter) Write(data []byte) (int, error) {
 	for len(data) > 0 {
 		// never send more data than our EnvelopeSize.
 		n := min(w.client.Parameters.EnvelopeSize-1000, len(data))
-		if err := w.sendInput(data[:n]); err != nil {
+		eof := false
+		if w.eof && len(data) == n {
+			eof = true
+		}
+
+		if err := w.sendInput(data[:n], eof); err != nil {
 			break
 		}
 		data = data[n:]
@@ -213,6 +214,12 @@ func (w *commandWriter) Write(data []byte) (int, error) {
 	}
 
 	return written, err
+}
+
+// Write data to this Pipe and mark EOF
+func (w *commandWriter) WriteClose(data []byte) (int, error) {
+	w.eof = true
+	return w.Write(data)
 }
 
 func min(a int, b int) int {
@@ -225,8 +232,8 @@ func min(a int, b int) int {
 // Close method wrapper
 // commandWriter implements io.Closer interface
 func (w *commandWriter) Close() error {
-	w.eof = true
-	return w.sendInput(nil)
+	_, err := w.WriteClose(nil)
+	return err
 }
 
 // Read data from this Pipe

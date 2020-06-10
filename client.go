@@ -149,13 +149,7 @@ func (c *Client) RunWithString(command string, stdin string) (string, string, in
 	}
 
 	if len(stdin) > 0 {
-		_, err := cmd.Stdin.Write([]byte(stdin))
-		if err != nil {
-			return "", "", -1, err
-		}
-
-		err = cmd.Stdin.Close()
-
+		_, err := cmd.Stdin.WriteClose([]byte(stdin))
 		if err != nil {
 			return "", "", -1, err
 		}
@@ -202,7 +196,6 @@ func (c Client) RunWithInput(command string, stdout, stderr io.Writer, stdin io.
 	go func() {
 		defer wg.Done()
 		io.Copy(cmd.Stdin, stdin)
-		cmd.Stdin.Close()
 	}()
 	go func() {
 		defer wg.Done()
