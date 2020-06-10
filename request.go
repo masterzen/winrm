@@ -131,6 +131,9 @@ func NewSendInputRequest(uri, shellId, commandId string, input []byte, params *P
 	streams.SetAttr("Name", "stdin")
 	streams.SetAttr("CommandId", commandId)
 	streams.SetContent(content)
+	if input == nil {
+		streams.SetAttr("End", "true")
+	}
 	return message
 }
 

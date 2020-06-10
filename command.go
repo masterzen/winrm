@@ -193,6 +193,9 @@ func (c *Command) Wait() {
 // Write data to this Pipe
 // commandWriter implements io.Writer interface
 func (w *commandWriter) Write(data []byte) (int, error) {
+	if w.eof {
+		return 0, w.sendInput(nil)
+	}
 
 	var (
 		written int
@@ -200,9 +203,6 @@ func (w *commandWriter) Write(data []byte) (int, error) {
 	)
 
 	for len(data) > 0 {
-		if w.eof {
-			return written, io.EOF
-		}
 		// never send more data than our EnvelopeSize.
 		n := min(w.client.Parameters.EnvelopeSize-1000, len(data))
 		if err := w.sendInput(data[:n]); err != nil {
@@ -226,7 +226,7 @@ func min(a int, b int) int {
 // commandWriter implements io.Closer interface
 func (w *commandWriter) Close() error {
 	w.eof = true
-        return nil
+	return w.sendInput(nil)
 }
 
 // Read data from this Pipe

@@ -46,7 +46,7 @@ func NewClientWithParameters(endpoint *Endpoint, user, password string, params *
 		url:        endpoint.url(),
 		useHTTPS:   endpoint.HTTPS,
 		// default transport
-		http: &clientRequest{ dial:params.Dial },
+		http: &clientRequest{dial: params.Dial},
 	}
 
 	// switch to other transport if provided
@@ -147,8 +147,18 @@ func (c *Client) RunWithString(command string, stdin string) (string, string, in
 	if err != nil {
 		return "", "", 1, err
 	}
+
 	if len(stdin) > 0 {
-		cmd.Stdin.Write([]byte(stdin))
+		_, err := cmd.Stdin.Write([]byte(stdin))
+		if err != nil {
+			return "", "", -1, err
+		}
+
+		err = cmd.Stdin.Close()
+
+		if err != nil {
+			return "", "", -1, err
+		}
 	}
 
 	var outWriter, errWriter bytes.Buffer
@@ -192,6 +202,7 @@ func (c Client) RunWithInput(command string, stdout, stderr io.Writer, stdin io.
 	go func() {
 		defer wg.Done()
 		io.Copy(cmd.Stdin, stdin)
+		cmd.Stdin.Close()
 	}()
 	go func() {
 		defer wg.Done()
