@@ -142,6 +142,12 @@ func runWinRMFakeServer(c *C, expectedStdin string) (*httptest.Server, string, i
 			var stdin bytes.Buffer
 			doc, err := xmltree.ParseXML(strings.NewReader(body))
 			c.Assert(err, IsNil)
+			end, err := xPath(doc, "//rsp:Stream[@Name='stdin']/@End")
+			c.Assert(err, IsNil)
+			if end.Bool() {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
 			stdins, err := xPath(doc, "//rsp:Stream[@Name='stdin']")
 			c.Assert(err, IsNil)
 			for _, node := range stdins {

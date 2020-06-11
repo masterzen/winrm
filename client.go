@@ -130,6 +130,7 @@ func (c *Client) Run(command string, stdout io.Writer, stderr io.Writer) (int, e
 
 	cmd.Wait()
 	wg.Wait()
+	cmd.Close()
 
 	return cmd.ExitCode(), cmd.err
 }
@@ -149,7 +150,8 @@ func (c *Client) RunWithString(command string, stdin string) (string, string, in
 	}
 
 	if len(stdin) > 0 {
-		_, err := cmd.Stdin.WriteClose([]byte(stdin))
+		defer cmd.Stdin.Close()
+		_, err := cmd.Stdin.Write([]byte(stdin))
 		if err != nil {
 			return "", "", -1, err
 		}
@@ -170,6 +172,7 @@ func (c *Client) RunWithString(command string, stdin string) (string, string, in
 
 	cmd.Wait()
 	wg.Wait()
+	cmd.Close()
 
 	return outWriter.String(), errWriter.String(), cmd.ExitCode(), cmd.err
 }
@@ -194,7 +197,10 @@ func (c Client) RunWithInput(command string, stdout, stderr io.Writer, stdin io.
 	wg.Add(3)
 
 	go func() {
-		defer wg.Done()
+		defer func() {
+			cmd.Stdin.Close()
+			wg.Done()
+		}()
 		io.Copy(cmd.Stdin, stdin)
 	}()
 	go func() {
@@ -208,6 +214,7 @@ func (c Client) RunWithInput(command string, stdout, stderr io.Writer, stdin io.
 
 	cmd.Wait()
 	wg.Wait()
+	cmd.Close()
 
 	return cmd.ExitCode(), cmd.err
 
