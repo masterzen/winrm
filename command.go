@@ -5,11 +5,13 @@ import (
 	"errors"
 	"io"
 	"strings"
+	"sync"
 )
 
 type commandWriter struct {
 	*Command
-	eof bool
+	mutex sync.Mutex
+	eof   bool
 }
 
 type commandReader struct {
@@ -191,26 +193,33 @@ func (c *Command) Wait() {
 }
 
 // Write data to this Pipe
-// commandWriter implements io.Writer interface
+// commandWriter implements io.Writer and io.Closer interface
 func (w *commandWriter) Write(data []byte) (int, error) {
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+
+	if w.eof {
+		return 0, io.ErrClosedPipe
+	}
+
 	var (
 		written int
 		err     error
 	)
-
+	origLen := len(data)
 	for len(data) > 0 {
 		// never send more data than our EnvelopeSize.
 		n := min(w.client.Parameters.EnvelopeSize-1000, len(data))
-		eof := false
-		if w.eof && len(data) == n {
-			eof = true
-		}
-
-		if err := w.sendInput(data[:n], eof); err != nil {
+		if err := w.sendInput(data[:n], false); err != nil {
 			break
 		}
 		data = data[n:]
 		written += n
+	}
+
+	// signal that we couldn't write all data
+	if err == nil && written < origLen {
+		err = io.ErrShortWrite
 	}
 
 	return written, err
@@ -232,8 +241,14 @@ func min(a int, b int) int {
 // Close method wrapper
 // commandWriter implements io.Closer interface
 func (w *commandWriter) Close() error {
-	_, err := w.WriteClose(nil)
-	return err
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+
+	if w.eof {
+		return io.ErrClosedPipe
+	}
+	w.eof = true
+	return w.sendInput(nil, w.eof)
 }
 
 // Read data from this Pipe
