@@ -75,15 +75,14 @@ func (s *WinRMSuite) TestStdinCommand(c *C) {
 		if strings.Contains(message.String(), "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Send") {
 			c.Assert(message.String(), Contains, "c3RhbmRhcmQgaW5wdXQ=")
 			return "", nil
+		}
+		if strings.Contains(message.String(), "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Command") {
+			return executeCommandResponse, nil
+		} else if count != 1 && strings.Contains(message.String(), "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Receive") {
+			count = 1
+			return outputResponse, nil
 		} else {
-			if strings.Contains(message.String(), "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Command") {
-				return executeCommandResponse, nil
-			} else if count != 1 && strings.Contains(message.String(), "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Receive") {
-				count = 1
-				return outputResponse, nil
-			} else {
-				return doneCommandResponse, nil
-			}
+			return doneCommandResponse, nil
 		}
 	}
 	client.http = r

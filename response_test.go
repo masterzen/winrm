@@ -8,23 +8,23 @@ import (
 
 func (s *WinRMSuite) TestOpenShellResponse(c *C) {
 	response := createShellResponse
-	shellId, err := ParseOpenShellResponse(response)
+	shellID, err := ParseOpenShellResponse(response)
 	if err != nil {
 		c.Fatalf("response didn't parse: %s", err)
 	}
 
-	c.Assert("67A74734-DD32-4F10-89DE-49A060483810", Equals, shellId)
+	c.Assert("67A74734-DD32-4F10-89DE-49A060483810", Equals, shellID)
 }
 
 func (s *WinRMSuite) TestExecuteCommandResponse(c *C) {
 	response := executeCommandResponse
 
-	commandId, err := ParseExecuteCommandResponse(response)
+	commandID, err := ParseExecuteCommandResponse(response)
 	if err != nil {
 		c.Fatalf("response didn't parse: %s", err)
 	}
 
-	c.Assert("1A6DEE6B-EC68-4DD6-87E9-030C0048ECC4", Equals, commandId)
+	c.Assert("1A6DEE6B-EC68-4DD6-87E9-030C0048ECC4", Equals, commandID)
 
 }
 
