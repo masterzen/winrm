@@ -18,10 +18,9 @@ func (s *WinRMSuite) TestShellExecuteResponse(c *C) {
 			c.Assert(message.String(), Contains, "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Command")
 			first = false
 			return executeCommandResponse, nil
-		} else {
-			c.Assert(message.String(), Contains, "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Receive")
-			return outputResponse, nil
 		}
+		c.Assert(message.String(), Contains, "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Receive")
+		return outputResponse, nil
 	}
 	client.http = r
 	command, _ := shell.Execute("ipconfig /all")
