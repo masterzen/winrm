@@ -8,15 +8,16 @@ import (
 
 	"github.com/masterzen/winrm/soap"
 
-	. "gopkg.in/check.v1"
 	"net"
 	"time"
+
+	. "gopkg.in/check.v1"
 )
 
 type Requester struct {
 	http      func(*Client, *soap.SoapMessage) (string, error)
 	transport http.RoundTripper
-	dial func(network, addr string) (net.Conn, error)
+	dial      func(network, addr string) (net.Conn, error)
 }
 
 func (r Requester) Post(client *Client, request *soap.SoapMessage) (string, error) {
@@ -29,7 +30,7 @@ func (r Requester) Transport(endpoint *Endpoint) error {
 			InsecureSkipVerify: endpoint.Insecure,
 		},
 		ResponseHeaderTimeout: endpoint.Timeout,
-		Dial: r.dial,
+		Dial:                  r.dial,
 	}
 
 	if endpoint.CACert != nil && len(endpoint.CACert) > 0 {
@@ -99,6 +100,21 @@ func (s *WinRMSuite) TestRunWithString(c *C) {
 	c.Assert(err, IsNil)
 
 	stdout, stderr, code, err := client.RunWithString("ipconfig /all", "this is the input")
+	c.Assert(err, IsNil)
+	c.Assert(code, Equals, 123)
+	c.Assert(stdout, Equals, "That's all folks!!!")
+	c.Assert(stderr, Equals, "This is stderr, I'm pretty sure!")
+}
+
+func (s *WinRMSuite) TestRunPSWithString(c *C) {
+	ts, host, port, err := runWinRMFakeServer(c, "this is the input")
+	c.Assert(err, IsNil)
+	defer ts.Close()
+	endpoint := NewEndpoint(host, port, false, false, nil, nil, nil, 0)
+	client, err := NewClient(endpoint, "Administrator", "v3r1S3cre7")
+	c.Assert(err, IsNil)
+
+	stdout, stderr, code, err := client.RunPSWithString("ipconfig /all", "this is the input")
 	c.Assert(err, IsNil)
 	c.Assert(code, Equals, 123)
 	c.Assert(stdout, Equals, "That's all folks!!!")
@@ -220,7 +236,6 @@ func (s *WinRMSuite) TestReplaceTransportWithDecorator(c *C) {
 	_, ok := client.http.(*ClientAuthRequest)
 	c.Assert(ok, Equals, true)
 }
-
 
 func (s *WinRMSuite) TestReplaceDial(c *C) {
 	ts, host, port, err := runWinRMFakeServer(c, "this is the input")
