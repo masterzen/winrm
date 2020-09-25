@@ -3,13 +3,12 @@ package winrm
 import (
 	"bytes"
 	"crypto/x509"
-	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"sync"
 
 	"github.com/masterzen/winrm/soap"
-	"golang.org/x/text/encoding/unicode"
 )
 
 // Client struct
@@ -182,21 +181,15 @@ func (c *Client) RunWithString(command string, stdin string) (string, string, in
 //RunPSWithString will basically wrap your code to execute commands in powershell.exe. Default RunWithString
 // runs commands in cmd.exe
 func (c *Client) RunPSWithString(command string, stdin string) (string, string, int, error) {
-	// Disable unnecessary progress bars which considered as stderr.
-	command = "$ProgressPreference = 'SilentlyContinue';" + command
+	command = Powershell(command)
 
-	// Encode string to UTF16-LE
-	encoder := unicode.UTF16(unicode.LittleEndian, unicode.IgnoreBOM).NewEncoder()
-	encoded, err := encoder.String(command)
-	if err != nil {
-		return "", "", 1, err
+	// Let's check if we actually created a command
+	if command == "" {
+		return "", "", 1, errors.New("cannot encode the given command")
 	}
 
-	// Finally make it base64 encoded which is required for powershell.
-	command = base64.StdEncoding.EncodeToString([]byte(encoded))
-
 	// Specify powershell.exe to run encoded command
-	return c.RunWithString("powershell.exe -encodedCommand "+command, stdin)
+	return c.RunWithString(command, stdin)
 }
 
 // RunWithInput will run command on the the remote host, writing the process stdout and stderr to
