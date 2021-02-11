@@ -33,7 +33,7 @@ func NewOpenShellRequest(uri string, params *Parameters) *soap.SoapMessage {
 	defaultHeaders(message, uri, params).
 		Action("http://schemas.xmlsoap.org/ws/2004/09/transfer/Create").
 		ResourceURI("http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd").
-		AddOption(soap.NewHeaderOption("WINRS_NOPROFILE", "FALSE")).
+		AddOption(soap.NewHeaderOption("WINRS_NOPROFILE", "TRUE")).
 		AddOption(soap.NewHeaderOption("WINRS_CODEPAGE", "65001")).
 		Build()
 
@@ -73,7 +73,7 @@ func NewExecuteCommandRequest(uri, shellID, command string, arguments []string, 
 		Action("http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Command").
 		ResourceURI("http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd").
 		ShellId(shellID).
-		AddOption(soap.NewHeaderOption("WINRS_CONSOLEMODE_STDIN", "TRUE")).
+		AddOption(soap.NewHeaderOption("WINRS_CONSOLEMODE_STDIN", "FALSE")).
 		AddOption(soap.NewHeaderOption("WINRS_SKIP_CMD_SHELL", "FALSE")).
 		Build()
 
