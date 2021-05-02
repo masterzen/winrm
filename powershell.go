@@ -2,6 +2,7 @@ package winrm
 
 import (
 	"encoding/base64"
+	"runtime"
 
 	"golang.org/x/text/encoding/unicode"
 )
@@ -22,6 +23,17 @@ func Powershell(psCmd string) string {
 	// Finally make it base64 encoded which is required for powershell.
 	psCmd = base64.StdEncoding.EncodeToString([]byte(encoded))
 
-	// Specify powershell.exe to run encoded command
-	return "powershell.exe -EncodedCommand " + psCmd
+	var process string
+
+	// Windows
+	if runtime.GOOS == "windows" {
+		// Specify powershell.exe to run encoded command
+		process = "powershell.exe"
+	}
+	// Linux // MacOS
+	if runtime.GOOS == "linux" || runtime.GOOS == "darwin" {
+		// Specify pwsh to run encoded command
+		process = "pwsh"
+	}
+	return process + " -EncodedCommand " + psCmd
 }
