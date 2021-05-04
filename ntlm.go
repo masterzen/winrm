@@ -2,6 +2,8 @@ package winrm
 
 import (
 	"net"
+	"net/http"
+	"net/url"
 
 	"github.com/Azure/go-ntlmssp"
 	"github.com/masterzen/winrm/soap"
@@ -29,6 +31,15 @@ func NewClientNTLMWithDial(dial func(network, addr string) (net.Conn, error)) *C
 	return &ClientNTLM{
 		clientRequest{
 			dial: dial,
+		},
+	}
+}
+
+//NewClientNTLMWithProxyFunc NewClientNTLMWithProxyFunc
+func NewClientNTLMWithProxyFunc(proxyfunc func(req *http.Request) (*url.URL, error)) *ClientNTLM {
+	return &ClientNTLM{
+		clientRequest{
+			proxyfunc: proxyfunc,
 		},
 	}
 }
