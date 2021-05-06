@@ -3,7 +3,6 @@ package winrm
 import (
 	"crypto/tls"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
@@ -11,15 +10,17 @@ import (
 	"time"
 
 	"github.com/masterzen/winrm/soap"
+	"io/ioutil"
 )
 
 var soapXML = "application/soap+xml"
 
-// body func reads the response body and return it as a string
-func body(response *http.Response) (string, error) {
+// parse func reads the response body and return it as a string
+func ParseSoapResponse(response *http.Response) (string, error) {
 
-	// if we recived the content we expected
-	if strings.Contains(response.Header.Get("Content-Type"), "application/soap+xml") {
+	contentType := response.Header.Get("Content-Type")
+	// if we received the content we expected
+	if strings.Contains(contentType, soapXML) {
 		body, err := ioutil.ReadAll(response.Body)
 		defer func() {
 			// defer can modify the returned value before
@@ -35,7 +36,7 @@ func body(response *http.Response) (string, error) {
 		return string(body), nil
 	}
 
-	return "", fmt.Errorf("invalid content type")
+	return "", fmt.Errorf("invalid content type: %s", contentType)
 }
 
 type clientRequest struct {
@@ -99,18 +100,15 @@ func (c clientRequest) Post(client *Client, request *soap.SoapMessage) (string, 
 		return "", fmt.Errorf("unknown error %s", err)
 	}
 
-	body, err := body(resp)
+	// error in case of incorrect exit code
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("http unexpected status: %s", resp.Status)
+	}
+
+	body, err := ParseSoapResponse(resp)
 	if err != nil {
 		return "", fmt.Errorf("http response error: %d - %s", resp.StatusCode, err.Error())
 	}
-
-	// if we have different 200 http status code
-	// we must replace the error
-	defer func() {
-		if resp.StatusCode != 200 {
-			body, err = "", fmt.Errorf("http error %d: %s", resp.StatusCode, body)
-		}
-	}()
 
 	return body, err
 }
