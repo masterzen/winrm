@@ -57,7 +57,7 @@ func NewClientWithParameters(endpoint *Endpoint, user, password string, params *
 
 	// set the transport to some endpoint configuration
 	if err := client.http.Transport(endpoint); err != nil {
-		return nil, fmt.Errorf("Can't parse this key and certs: %s", err)
+		return nil, fmt.Errorf("Can't parse this key and certs: %w", err)
 	}
 
 	return client, nil
