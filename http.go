@@ -29,7 +29,7 @@ func body(response *http.Response) (string, error) {
 			}
 		}()
 		if err != nil {
-			return "", fmt.Errorf("error while reading request body %s", err)
+			return "", fmt.Errorf("error while reading request body %w", err)
 		}
 
 		return string(body), nil
@@ -90,18 +90,18 @@ func (c clientRequest) Post(client *Client, request *soap.SoapMessage) (string, 
 
 	req, err := http.NewRequest("POST", client.url, strings.NewReader(request.String()))
 	if err != nil {
-		return "", fmt.Errorf("impossible to create http request %s", err)
+		return "", fmt.Errorf("impossible to create http request %w", err)
 	}
 	req.Header.Set("Content-Type", soapXML+";charset=UTF-8")
 	req.SetBasicAuth(client.username, client.password)
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("unknown error %s", err)
+		return "", fmt.Errorf("unknown error %w", err)
 	}
 
 	body, err := body(resp)
 	if err != nil {
-		return "", fmt.Errorf("http response error: %d - %s", resp.StatusCode, err.Error())
+		return "", fmt.Errorf("http response error: %d - %w", resp.StatusCode, err)
 	}
 
 	// if we have different 200 http status code
