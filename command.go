@@ -37,6 +37,7 @@ type Command struct {
 
 	done   chan struct{}
 	cancel chan struct{}
+	once   sync.Once
 }
 
 func newCommand(ctx context.Context, shell *Shell, ids string) *Command {
@@ -113,20 +114,25 @@ func (c *Command) check() error {
 
 // Close will terminate the running command
 func (c *Command) Close() error {
-	if err := c.check(); err != nil {
+	var err error
+
+	if err = c.check(); err != nil {
 		return err
 	}
 
-	select { // close cancel channel if it's still open
-	case <-c.cancel:
-	default:
-		close(c.cancel)
+	if _, ok := <-c.cancel; !ok {
+		return nil // channel already closed, do not send a signal
 	}
 
-	request := NewSignalRequest(c.client.url, c.shell.id, c.id, &c.client.Parameters)
-	defer request.Free()
+	c.once.Do(func() {
+		close(c.cancel)
 
-	_, err := c.client.sendRequest(request)
+		request := NewSignalRequest(c.client.url, c.shell.id, c.id, &c.client.Parameters)
+		defer request.Free()
+
+		_, err = c.client.sendRequest(request)
+	})
+
 	return err
 }
 
