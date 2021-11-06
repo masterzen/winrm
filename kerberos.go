@@ -14,10 +14,25 @@ type ClientKerberos struct {
     clientRequest
 }
 
+// ClientKerberosWithNoCanonicalize provides a transport via Kerberos, which do not
+//  do forward & reverse DNS queries. Useful when you cant resolve reverse
+// Needs PR#5 from github.com/dpotapov/go-spnego (or temporarily use github.com/yo000/go-spnego)
+type ClientKerberosWithNoCanonicalize struct {
+    clientRequest
+	NoCanonicalize bool
+}
+
 // Transport creates the wrapped Kerberos transport
 func (c *ClientKerberos) Transport(endpoint *Endpoint) error {
     c.clientRequest.Transport(endpoint)
     c.clientRequest.transport = &spnego.Transport{}
+    return nil
+}
+
+// Transport creates the wrapped KerberosWithNoCanonicalize transport
+func (c *ClientKerberosWithNoCanonicalize) Transport(endpoint *Endpoint) error {
+    c.clientRequest.Transport(endpoint)
+    c.clientRequest.transport = &spnego.Transport{NoCanonicalize: true}
     return nil
 }
 
