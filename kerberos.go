@@ -1,61 +1,129 @@
 package winrm
 
 import (
-    "net"
-    "net/http"
-    "net/url"
+	"fmt"
+	"io"
+	"io/ioutil"
+	"net/http"
+	"strings"
 
-    "github.com/dpotapov/go-spnego"
-    "github.com/masterzen/winrm/soap"
+	"github.com/masterzen/winrm/soap"
+
+	"github.com/jcmturner/gokrb5/v8/client"
+	"github.com/jcmturner/gokrb5/v8/config"
+	"github.com/jcmturner/gokrb5/v8/credentials"
+	"github.com/jcmturner/gokrb5/v8/spnego"
 )
 
-// ClientKerberos provides a transport via Kerberos
+// Settings holds all the information necessary to configure the provider
+type Settings struct {
+	WinRMUsername        string
+	WinRMPassword        string
+	WinRMHost            string
+	WinRMPort            int
+	WinRMProto           string
+	WinRMInsecure        bool
+	KrbRealm             string
+	KrbConfig            string
+	KrbSpn               string
+	KrbCCache            string
+	WinRMUseNTLM         bool
+	WinRMPassCredentials bool
+}
+
 type ClientKerberos struct {
-    clientRequest
+	clientRequest
+	Username  string
+	Password  string
+	Realm     string
+	Hostname  string
+	Port      int
+	Proto     string
+	SPN       string
+	KrbConf   string
+	KrbCCache string
 }
 
-// ClientKerberosWithNoCanonicalize provides a transport via Kerberos, which do not
-//  do forward & reverse DNS queries. Useful when you cant resolve reverse
-// Needs PR#5 from github.com/dpotapov/go-spnego (or temporarily use github.com/yo000/go-spnego)
-type ClientKerberosWithNoCanonicalize struct {
-    clientRequest
-	NoCanonicalize bool
+func NewClientKerberos(settings *Settings) *ClientKerberos {
+	return &ClientKerberos{
+		Username:  settings.WinRMUsername,
+		Password:  settings.WinRMPassword,
+		Realm:     settings.KrbRealm,
+		Hostname:  settings.WinRMHost,
+		Port:      settings.WinRMPort,
+		Proto:     settings.WinRMProto,
+		KrbConf:   settings.KrbConfig,
+		KrbCCache: settings.KrbCCache,
+		SPN:       settings.KrbSpn,
+	}
 }
 
-// Transport creates the wrapped Kerberos transport
 func (c *ClientKerberos) Transport(endpoint *Endpoint) error {
-    c.clientRequest.Transport(endpoint)
-    c.clientRequest.transport = &spnego.Transport{}
-    return nil
+	c.clientRequest.Transport(endpoint)
+
+	return nil
 }
 
-// Transport creates the wrapped KerberosWithNoCanonicalize transport
-func (c *ClientKerberosWithNoCanonicalize) Transport(endpoint *Endpoint) error {
-    c.clientRequest.Transport(endpoint)
-    c.clientRequest.transport = &spnego.Transport{NoCanonicalize: true}
-    return nil
-}
+func (c *ClientKerberos) Post(clt *Client, request *soap.SoapMessage) (string, error) {
+	cfg, err := config.Load(c.KrbConf)
+	if err != nil {
+		return "", err
+	}
 
-// Post make post to the winrm soap service (forwarded to clientRequest implementation)
-func (c ClientKerberos) Post(client *Client, request *soap.SoapMessage) (string, error) {
-    return c.clientRequest.Post(client, request)
-}
+	// setup the kerberos client
+	var kerberosClient *client.Client
+	if len(c.KrbCCache) > 0 {
+		b, err := ioutil.ReadFile(c.KrbCCache)
+		if err != nil {
+			return "", fmt.Errorf("Unable to read ccache file %s: %s\n", c.KrbCCache, err.Error())
+		}
 
-//NewClientKerberosWithDial NewClientKerberosWithDial
-func NewClientKerberosWithDial(dial func(network, addr string) (net.Conn, error)) *ClientKerberos {
-    return &ClientKerberos{
-        clientRequest{
-            dial: dial,
-        },
-    }
-}
+		cc := new(credentials.CCache)
+		err = cc.Unmarshal(b)
+		if err != nil {
+			return "", fmt.Errorf("Unable to parse ccache file %s: %s", c.KrbCCache, err.Error())
+		}
+		kerberosClient, err = client.NewFromCCache(cc, cfg, client.DisablePAFXFAST(true))
+		if err != nil {
+			return "", fmt.Errorf("Unable to create kerberos client from ccache: %s\n", err.Error())
+		}
+	} else {
+		kerberosClient = client.NewWithPassword(c.Username, c.Realm, c.Password, cfg,
+			client.DisablePAFXFAST(true), client.AssumePreAuthentication(true))
+	}
 
-//NewClientKerberosWithProxyFunc NewClientKerberosWithProxyFunc
-func NewClientKerberosWithProxyFunc(proxyfunc func(req *http.Request) (*url.URL, error)) *ClientKerberos {
-    return &ClientKerberos{
-        clientRequest{
-            proxyfunc: proxyfunc,
-        },
-    }
-}
+	//create an http request
+	winrmURL := fmt.Sprintf("%s://%s:%d/wsman", c.Proto, c.Hostname, c.Port)
+	winRMRequest, _ := http.NewRequest("POST", winrmURL, strings.NewReader(request.String()))
+	winRMRequest.Header.Add("Content-Type", "application/soap+xml;charset=UTF-8")
 
+	err = spnego.SetSPNEGOHeader(kerberosClient, winRMRequest, c.SPN)
+	if err != nil {
+		return "", fmt.Errorf("Unable to set SPNego Header: %s\n", err.Error())
+	}
+
+	httpClient := &http.Client{Transport: c.transport}
+
+	resp, err := httpClient.Do(winRMRequest)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		var bodyMsg string
+		respBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			bodyMsg = fmt.Sprintf("Error retrieving the response's body: %s", err)
+		} else {
+			bodyMsg = fmt.Sprintf("Response body:\n%s", string(respBody))
+		}
+		return "", fmt.Errorf("Request returned: %d - %s. %s ", resp.StatusCode, resp.Status, bodyMsg)
+	}
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	return string(body), err
+}
