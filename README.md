@@ -16,7 +16,7 @@ _Note_: this library doesn't support domain users (it doesn't support GSSAPI nor
 
 
 ## Getting Started
-WinRM is available on Windows Server 2008 and up. This project natively supports basic authentication for local accounts, see the steps in the next section on how to prepare the remote Windows machine for this scenario. The authentication model is pluggable, see below for an example on using Negotiate/NTLM authentication (e.g. for connecting to vanilla Azure VMs).
+WinRM is available on Windows Server 2008 and up. This project natively supports basic authentication for local accounts, see the steps in the next section on how to prepare the remote Windows machine for this scenario. The authentication model is pluggable, see below for an example on using Negotiate/NTLM authentication (e.g. for connecting to vanilla Azure VMs) or Kerberos authentication (using domain accounts).
 
 _Note_: This library only supports Golang 1.7+
 
@@ -40,6 +40,19 @@ __N.B.:__ Do not disable Negotiate authentication as the `winrm` command itself 
 __N.B.:__ The `MaxMemoryPerShellMB` option has no effects on some Windows 2008R2 systems because of a WinRM bug. Make sure to install the hotfix described [Microsoft Knowledge Base article #2842230](http://support.microsoft.com/kb/2842230) if you need to run commands that uses more than 150MB of memory.
 
 For more information on WinRM, please refer to <a href="http://msdn.microsoft.com/en-us/library/windows/desktop/aa384426(v=vs.85).aspx">the online documentation at Microsoft's DevCenter</a>.
+
+### Preparing the remote Windows machine for kerberos authentication
+This project supports domain users via kerberos authentication. The remote windows system must be prepared for winrm:
+
+On the remote host, a PowerShell prompt, using the __Run as Administrator__ option and paste in the following lines:
+
+                winrm quickconfig
+                y
+                winrm set winrm/config/service '@{AllowUnencrypted="true"}'
+                winrm set winrm/config/winrs '@{MaxMemoryPerShellMB="1024"}'
+
+All __N.B__ points of "Preparing the remote Windows machine for Basic authentication" also applies.
+
 
 ### Building the winrm go and executable
 
@@ -133,6 +146,45 @@ if err != nil {
 }
 
 ```
+
+Passing a TransportDecorator also permit to use Kerberos authentication
+
+```go
+package main
+import (
+  "os"
+  "fmt"
+  "github.com/masterzen/winrm"
+)
+
+endpoint := winrm.NewEndpoint("srv-win", 5985, false, false, nil, nil, nil, 0)
+
+params := winrm.DefaultParameters
+params.TransportDecorator = func() Transporter {
+        return &winrm.ClientKerberos{
+		Username: "test",
+		Password: "s3cr3t",
+		Hostname: "srv-win",
+		Realm: "DOMAIN.LAN",
+		Port: 5985,
+		Proto: "http",
+		KrbConf: "/etc/krb5.conf",
+		SPN: fmt.Sprintf("HTTP/%s", hostname),
+	}
+}
+
+client, err := NewClientWithParameters(endpoint, "test", "s3cr3t", params)
+if err != nil {
+        panic(err)
+}
+
+_, err := client.RunWithInput("ipconfig", os.Stdout, os.Stderr, os.Stdin)
+if err != nil {
+        panic(err)
+}
+
+```
+
 
 By passing a Dial in the Parameters struct it is possible to use different dialer (e.g. tunnel through SSH)
 
