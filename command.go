@@ -2,6 +2,7 @@ package winrm
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"strings"
@@ -39,7 +40,7 @@ type Command struct {
 	cancel chan struct{}
 }
 
-func newCommand(shell *Shell, ids string) *Command {
+func newCommand(ctx context.Context, shell *Shell, ids string) *Command {
 	command := &Command{
 		shell:    shell,
 		client:   shell.client,
@@ -57,7 +58,7 @@ func newCommand(shell *Shell, ids string) *Command {
 	}
 	command.Stderr = newCommandReader("stderr", command)
 
-	go fetchOutput(command)
+	go fetchOutput(ctx, command)
 
 	return command
 }
@@ -72,12 +73,21 @@ func newCommandReader(stream string, command *Command) *commandReader {
 	}
 }
 
-func fetchOutput(command *Command) {
+func fetchOutput(ctx context.Context, command *Command) {
 	for {
+		ctxDone := ctx.Done()
 		select {
 		case <-command.cancel:
+			_, _ = command.slurpAllOutput()
+			err := errors.New("canceled")
+			command.Stderr.write.CloseWithError(err)
+			command.Stdout.write.CloseWithError(err)
 			close(command.done)
 			return
+		case <-ctxDone:
+			command.err = ctx.Err()
+			ctxDone = nil
+			command.Close()
 		default:
 			finished, err := command.slurpAllOutput()
 			if finished {
