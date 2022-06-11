@@ -8,6 +8,7 @@ type Parameters struct {
 	Timeout            string
 	Locale             string
 	EnvelopeSize       int
+	RequestOptions     map[string]string
 	TransportDecorator func() Transporter
 	Dial               func(network, addr string) (net.Conn, error)
 }
@@ -23,5 +24,11 @@ func NewParameters(timeout, locale string, envelopeSize int) *Parameters {
 		Timeout:      timeout,
 		Locale:       locale,
 		EnvelopeSize: envelopeSize,
+		RequestOptions: map[string]string{
+			"WINRS_NOPROFILE":         "FALSE",
+			"WINRS_CODEPAGE":          "65001",
+			"WINRS_CONSOLEMODE_STDIN": "TRUE",
+			"WINRS_SKIP_CMD_SHELL":    "FALSE",
+		},
 	}
 }
