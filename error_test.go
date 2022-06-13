@@ -7,14 +7,13 @@ import (
 )
 
 func (s *WinRMSuite) TestError(c *C) {
-
-	err := errWinrm{
+	err := winrmError{
 		message: "Some test error",
 	}
 	same := errors.New("Some test error")
 	func(err, same error) {
-		t, ok := err.(errWinrm)
-		c.Assert(ok, Equals, true)
-		c.Assert(t.Error(), Equals, same.Error())
+		var wErr winrmError
+		c.Assert(errors.As(err, &wErr), Equals, true)
+		c.Assert(wErr.Error(), Equals, same.Error())
 	}(err, same)
 }

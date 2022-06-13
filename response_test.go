@@ -25,7 +25,6 @@ func (s *WinRMSuite) TestExecuteCommandResponse(c *C) {
 	}
 
 	c.Assert("1A6DEE6B-EC68-4DD6-87E9-030C0048ECC4", Equals, commandID)
-
 }
 
 func (s *WinRMSuite) TestSlurpOutputResponse(c *C) {

@@ -29,7 +29,6 @@ type Command struct {
 	shell    *Shell
 	id       string
 	exitCode int
-	finished bool
 	err      error
 
 	Stdin  *commandWriter
@@ -74,8 +73,8 @@ func newCommandReader(stream string, command *Command) *commandReader {
 }
 
 func fetchOutput(ctx context.Context, command *Command) {
+	ctxDone := ctx.Done()
 	for {
-		ctxDone := ctx.Done()
 		select {
 		case <-command.cancel:
 			_, _ = command.slurpAllOutput()
@@ -165,15 +164,15 @@ func (c *Command) slurpAllOutput() (bool, error) {
 		return true, err
 	}
 	if stdout.Len() > 0 {
-		c.Stdout.write.Write(stdout.Bytes())
+		_, _ = c.Stdout.write.Write(stdout.Bytes())
 	}
 	if stderr.Len() > 0 {
-		c.Stderr.write.Write(stderr.Bytes())
+		_, _ = c.Stderr.write.Write(stderr.Bytes())
 	}
 	if finished {
 		c.exitCode = exitCode
-		c.Stderr.write.Close()
-		c.Stdout.write.Close()
+		_ = c.Stderr.write.Close()
+		_ = c.Stdout.write.Close()
 	}
 
 	return finished, nil
@@ -264,7 +263,7 @@ func (w *commandWriter) Close() error {
 // Read data from this Pipe
 func (r *commandReader) Read(buf []byte) (int, error) {
 	n, err := r.read.Read(buf)
-	if err != nil && err != io.EOF {
+	if err != nil && errors.Is(err, io.EOF) {
 		return 0, err
 	}
 	return n, err

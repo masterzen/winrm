@@ -40,7 +40,6 @@ func NewClient(endpoint *Endpoint, user, password string) (*Client, error) {
 // NewClientWithParameters will create a new remote client on url, connecting with user and password
 // This function doesn't connect (connection happens only when CreateShell is called)
 func NewClientWithParameters(endpoint *Endpoint, user, password string, params *Parameters) (*Client, error) {
-
 	// alloc a new client
 	client := &Client{
 		Parameters: *params,
@@ -59,7 +58,7 @@ func NewClientWithParameters(endpoint *Endpoint, user, password string, params *
 
 	// set the transport to some endpoint configuration
 	if err := client.http.Transport(endpoint); err != nil {
-		return nil, fmt.Errorf("Can't parse this key and certs: %w", err)
+		return nil, fmt.Errorf("can't parse this key and certs: %w", err)
 	}
 
 	return client, nil
@@ -69,7 +68,7 @@ func readCACerts(certs []byte) (*x509.CertPool, error) {
 	certPool := x509.NewCertPool()
 
 	if !certPool.AppendCertsFromPEM(certs) {
-		return nil, fmt.Errorf("Unable to read certificates")
+		return nil, errors.New("unable to read certificates")
 	}
 
 	return certPool, nil
@@ -92,7 +91,6 @@ func (c *Client) CreateShell() (*Shell, error) {
 	}
 
 	return c.NewShell(shellID), nil
-
 }
 
 // NewShell will create a new WinRM Shell for the given shellID
@@ -202,15 +200,15 @@ func (c *Client) RunWithContextWithInput(ctx context.Context, command string, st
 		defer func() {
 			cmd.Stdin.Close()
 		}()
-		io.Copy(cmd.Stdin, stdin)
+		_, _ = io.Copy(cmd.Stdin, stdin)
 	}()
 	go func() {
 		defer wg.Done()
-		io.Copy(stdout, cmd.Stdout)
+		_, _ = io.Copy(stdout, cmd.Stdout)
 	}()
 	go func() {
 		defer wg.Done()
-		io.Copy(stderr, cmd.Stderr)
+		_, _ = io.Copy(stderr, cmd.Stderr)
 	}()
 
 	cmd.Wait()
