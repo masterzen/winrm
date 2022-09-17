@@ -20,11 +20,12 @@ type Requester struct {
 	dial      func(network, addr string) (net.Conn, error)
 }
 
-func (r Requester) Post(client *Client, request *soap.SoapMessage) (string, error) {
+func (r *Requester) Post(client *Client, request *soap.SoapMessage) (string, error) {
 	return r.http(client, request)
 }
 
-func (r Requester) Transport(endpoint *Endpoint) error {
+func (r *Requester) Transport(endpoint *Endpoint) error {
+	//nolint:gosec
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: endpoint.Insecure,
@@ -43,9 +44,7 @@ func (r Requester) Transport(endpoint *Endpoint) error {
 	}
 
 	r.transport = transport
-
 	return nil
-
 }
 
 func (s *WinRMSuite) TestNewClient(c *C) {
@@ -59,7 +58,6 @@ func (s *WinRMSuite) TestNewClient(c *C) {
 }
 
 func (s *WinRMSuite) TestClientCreateShell(c *C) {
-
 	endpoint := NewEndpoint("localhost", 5985, false, false, nil, nil, nil, 0)
 	client, err := NewClient(endpoint, "Administrator", "v3r1S3cre7")
 	c.Assert(err, IsNil)
@@ -68,7 +66,7 @@ func (s *WinRMSuite) TestClientCreateShell(c *C) {
 		c.Assert(message.String(), Contains, "http://schemas.xmlsoap.org/ws/2004/09/transfer/Create")
 		return createShellResponse, nil
 	}
-	client.http = r
+	client.http = &r
 
 	shell, _ := client.CreateShell()
 	c.Assert(shell.id, Equals, "67A74734-DD32-4F10-89DE-49A060483810")
@@ -256,6 +254,7 @@ func (s *WinRMSuite) TestReplaceDial(c *C) {
 
 	endpoint := NewEndpoint(host, port, false, false, nil, nil, nil, 0)
 	client, err := NewClientWithParameters(endpoint, "Administrator", "v3r1S3cre7", params)
+	c.Assert(err, IsNil)
 	var stdout, stderr bytes.Buffer
 	_, err = client.Run("ipconfig /all", &stdout, &stderr)
 	c.Assert(err, IsNil)

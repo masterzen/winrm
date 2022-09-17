@@ -22,7 +22,7 @@ func (s *WinRMSuite) TestShellExecuteResponse(c *C) {
 		c.Assert(message.String(), Contains, "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Receive")
 		return outputResponse, nil
 	}
-	client.http = r
+	client.http = &r
 	command, _ := shell.Execute("ipconfig /all")
 	c.Assert(command.id, Equals, "1A6DEE6B-EC68-4DD6-87E9-030C0048ECC4")
 }
@@ -38,7 +38,7 @@ func (s *WinRMSuite) TestShellCloseResponse(c *C) {
 		c.Assert(message.String(), Contains, "http://schemas.xmlsoap.org/ws/2004/09/transfer/Delete")
 		return "", nil
 	}
-	client.http = r
+	client.http = &r
 
 	shell.Close()
 }

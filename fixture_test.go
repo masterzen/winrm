@@ -118,8 +118,7 @@ func FindHostAndPortFromURL(rawurl string) (string, int, error) {
 // StartTestServer will start an httptest server on a random port with the given handler
 // and then return the host and port on which this server is listening
 func StartTestServer(handler http.Handler) (*httptest.Server, string, int, error) {
-	var ts *httptest.Server
-	ts = httptest.NewServer(handler)
+	ts := httptest.NewServer(handler)
 	host, port, err := FindHostAndPortFromURL(ts.URL)
 	return ts, host, port, err
 }

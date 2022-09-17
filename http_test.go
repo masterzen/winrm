@@ -3,9 +3,10 @@ package winrm
 import (
 	"net/http"
 
-	. "gopkg.in/check.v1"
 	"net"
 	"time"
+
+	. "gopkg.in/check.v1"
 )
 
 var response = `<s:Envelope xml:lang="en-US" xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:a="http://schemas.xmlsoap.org/ws/2004/08/addressing" xmlns:x="http://schemas.xmlsoap.org/ws/2004/09/transfer" xmlns:w="http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd" xmlns:rsp="http://schemas.microsoft.com/wbem/wsman/1/windows/shell" xmlns:p="http://schemas.microsoft.com/wbem/wsman/1/wsman.xsd">
@@ -43,7 +44,7 @@ stderr</rsp:OutputStreams>
 func (s *WinRMSuite) TestHttpRequest(c *C) {
 	ts, host, port, err := StartTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/soap+xml")
-		w.Write([]byte(response))
+		_, _ = w.Write([]byte(response))
 	}))
 	c.Assert(err, IsNil)
 	defer ts.Close()
@@ -54,7 +55,6 @@ func (s *WinRMSuite) TestHttpRequest(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(shell.id, Equals, "67A74734-DD32-4F10-89DE-49A060483810")
 }
-
 
 func (s *WinRMSuite) TestHttpViaCustomDialerRequest(c *C) {
 	normalDialer := (&net.Dialer{
@@ -69,7 +69,7 @@ func (s *WinRMSuite) TestHttpViaCustomDialerRequest(c *C) {
 
 	ts, host, port, err := StartTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/soap+xml")
-		w.Write([]byte(response))
+		_, _ = w.Write([]byte(response))
 	}))
 	c.Assert(err, IsNil)
 	defer ts.Close()

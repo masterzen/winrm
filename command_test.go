@@ -42,14 +42,14 @@ func (s *WinRMSuite) TestExecuteCommand(c *C) {
 			}
 		}
 	}
-	client.http = r
+	client.http = &r
 	command, _ := shell.Execute("ipconfig /all")
 	var stdout, stderr bytes.Buffer
 	var wg sync.WaitGroup
 	f := func(b *bytes.Buffer, r *commandReader) {
 		wg.Add(1)
 		defer wg.Done()
-		io.Copy(b, r)
+		_, _ = io.Copy(b, r)
 	}
 	go f(&stdout, command.Stdout)
 	go f(&stderr, command.Stderr)
@@ -85,13 +85,13 @@ func (s *WinRMSuite) TestStdinCommand(c *C) {
 			return doneCommandResponse, nil
 		}
 	}
-	client.http = r
+	client.http = &r
 	command, _ := shell.Execute("ipconfig /all")
-	command.Stdin.Write([]byte("standard input"))
+	_, _ = command.Stdin.Write([]byte("standard input"))
 	// slurp output from command
 	var outWriter, errWriter bytes.Buffer
-	go io.Copy(&outWriter, command.Stdout)
-	go io.Copy(&errWriter, command.Stderr)
+	go func() { _, _ = io.Copy(&outWriter, command.Stdout) }()
+	go func() { _, _ = io.Copy(&errWriter, command.Stderr) }()
 	command.Wait()
 }
 
@@ -119,7 +119,7 @@ func (s *WinRMSuite) TestCommandExitCode(c *C) {
 			return doneCommandExitCode0Response, nil
 		}
 	}
-	client.http = r
+	client.http = &r
 	command, _ := shell.Execute("ipconfig /all")
 
 	command.Wait()
@@ -154,11 +154,11 @@ func (s *WinRMSuite) TestCloseCommandStopsFetch(c *C) {
 			return "", nil
 		}
 	}
-	client.http = r
+	client.http = &r
 	command, _ := shell.Execute("ipconfig /all")
 	// need to be reading Stdout/Stderr, otherwise, the writes to these are blocking...
-	go ioutil.ReadAll(command.Stdout)
-	go ioutil.ReadAll(command.Stderr)
+	go func() { _, _ = ioutil.ReadAll(command.Stdout) }()
+	go func() { _, _ = ioutil.ReadAll(command.Stderr) }()
 
 	httpChan <- outputResponse // wait for command to enter fetch/slurp
 
@@ -166,7 +166,7 @@ func (s *WinRMSuite) TestCloseCommandStopsFetch(c *C) {
 
 	select {
 	case httpChan <- outputResponse: // return to fetch from slurp
-		c.Log("Fetch loop 'drained' one last reponse before realizing that the command is now closed")
+		c.Log("Fetch loop 'drained' one last response before realizing that the command is now closed")
 	case <-time.After(1 * time.Second):
 		c.Log("no poll within one second, fetch may have stopped")
 	}
@@ -202,11 +202,10 @@ func (s *WinRMSuite) TestConnectionTimeout(c *C) {
 			}
 		}
 	}))
-	defer ts.Close()
-
 	if err != nil {
 		c.Error(err)
 	}
+	defer ts.Close()
 
 	endpoint := NewEndpoint(host, port, false, false, nil, nil, nil, 1*time.Second)
 	client, err := NewClient(endpoint, "Administrator", "v3r1S3cre7")
@@ -244,11 +243,10 @@ func (s *WinRMSuite) TestOperationTimeoutSupport(c *C) {
 			}
 		}
 	}))
-	defer ts.Close()
-
 	if err != nil {
 		c.Error(err)
 	}
+	defer ts.Close()
 
 	endpoint := NewEndpoint(host, port, false, false, nil, nil, nil, 0)
 	client, err := NewClient(endpoint, "Administrator", "v3r1S3cre7")
@@ -261,7 +259,7 @@ func (s *WinRMSuite) TestOperationTimeoutSupport(c *C) {
 	f := func(b *bytes.Buffer, r *commandReader) {
 		wg.Add(1)
 		defer wg.Done()
-		io.Copy(b, r)
+		_, _ = io.Copy(b, r)
 	}
 	go f(&stdout, command.Stdout)
 	go f(&stderr, command.Stderr)
@@ -289,7 +287,7 @@ func (s *WinRMSuite) TestEOFError(c *C) {
 			return doneCommandExitCode0Response, nil
 		}
 	}
-	client.http = r
+	client.http = &r
 	shell := &Shell{client: client, id: "67A74734-DD32-4F10-89DE-49A060483810"}
 	command, _ := shell.Execute("ipconfig /all")
 
