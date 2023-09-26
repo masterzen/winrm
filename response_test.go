@@ -2,6 +2,7 @@ package winrm
 
 import (
 	"bytes"
+	"errors"
 
 	. "gopkg.in/check.v1"
 )
@@ -25,6 +26,21 @@ func (s *WinRMSuite) TestExecuteCommandResponse(c *C) {
 	}
 
 	c.Assert("1A6DEE6B-EC68-4DD6-87E9-030C0048ECC4", Equals, commandID)
+}
+
+func (s *WinRMSuite) TestExecuteCommandResponseError(c *C) {
+	response := executeCommandResponseWithError
+
+	commandID, err := ParseExecuteCommandResponse(response)
+	if err == nil {
+		c.Fatal("expected error")
+	}
+	c.Assert(commandID, Equals, "")
+
+	var execCmdRespErr *ExecuteCommandError
+	if !errors.As(err, &execCmdRespErr) {
+		c.Fatal("expected err to be of type ExecuteCommandError")
+	}
 }
 
 func (s *WinRMSuite) TestSlurpOutputResponse(c *C) {
