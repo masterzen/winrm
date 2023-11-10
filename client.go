@@ -135,6 +135,15 @@ func (c *Client) RunWithContextWithString(ctx context.Context, command string, s
 	return outWriter.String(), errWriter.String(), exitCode, err
 }
 
+// RunCmdWithContext will run command on the the remote host, returning the process stdout and stderr
+// as strings
+// If the context is canceled, the remote command is canceled.
+func (c *Client) RunCmdWithContext(ctx context.Context, command string) (string, string, int, error) {
+	var outWriter, errWriter bytes.Buffer
+	exitCode, err := c.RunWithContextWithInput(ctx, command, &outWriter, &errWriter, nil)
+	return outWriter.String(), errWriter.String(), exitCode, err
+}
+
 // RunPSWithString will basically wrap your code to execute commands in powershell.exe. Default RunWithString
 // runs commands in cmd.exe
 //
@@ -155,6 +164,21 @@ func (c *Client) RunPSWithContextWithString(ctx context.Context, command string,
 
 	// Specify powershell.exe to run encoded command
 	return c.RunWithContextWithString(ctx, command, stdin)
+}
+
+// RunPSWithContext will basically wrap your code to execute commands in powershell.exe.
+// runs commands in cmd.exe
+func (c *Client) RunPSWithContext(ctx context.Context, command string) (string, string, int, error) {
+	command = Powershell(command)
+
+	// Let's check if we actually created a command
+	if command == "" {
+		return "", "", 1, errors.New("cannot encode the given command")
+	}
+
+	var outWriter, errWriter bytes.Buffer
+	exitCode, err := c.RunWithContextWithInput(ctx, command, &outWriter, &errWriter, nil)
+	return outWriter.String(), errWriter.String(), exitCode, err
 }
 
 // RunWithInput will run command on the the remote host, writing the process stdout and stderr to
