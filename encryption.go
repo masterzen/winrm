@@ -227,6 +227,10 @@ func deleteEmpty(b [][]byte) [][]byte {
 	return r
 }
 
+// tried using pkg.go.dev/mime/multipart here but parsing fails with with
+// because in the header we have "\tContent-Type: application/HTTP-SPNEGO-session-encrypted\r\n"
+// on call to textproto.ReadMIMEHeader
+// because of "The first line cannot start with a leading space."
 func (e *Encryption) decryptResponse(response *http.Response, host string) ([]byte, error) {
 	body, _ := ioutil.ReadAll(response.Body)
 	parts := deleteEmpty(bytes.Split(body, []byte(fmt.Sprintf("%s\r\n", mimeBoundary))))
