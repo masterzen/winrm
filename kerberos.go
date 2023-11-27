@@ -3,8 +3,8 @@ package winrm
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/masterzen/winrm/soap"
@@ -71,7 +71,7 @@ func (c *ClientKerberos) Post(clt *Client, request *soap.SoapMessage) (string, e
 	// setup the kerberos client
 	var kerberosClient *client.Client
 	if len(c.KrbCCache) > 0 {
-		b, err := ioutil.ReadFile(c.KrbCCache)
+		b, err := os.ReadFile(c.KrbCCache)
 		if err != nil {
 			return "", fmt.Errorf("unable to read ccache file %s: %w", c.KrbCCache, err)
 		}
@@ -120,7 +120,7 @@ func (c *ClientKerberos) Post(clt *Client, request *soap.SoapMessage) (string, e
 		return "", fmt.Errorf("request returned: %d - %s. %s", resp.StatusCode, resp.Status, bodyMsg)
 	}
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", err
 	}

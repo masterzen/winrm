@@ -3,7 +3,7 @@ package winrm
 import (
 	"crypto/tls"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -19,7 +19,7 @@ var soapXML = "application/soap+xml"
 func body(response *http.Response) (string, error) {
 	// if we received the content we expected
 	if strings.Contains(response.Header.Get("Content-Type"), "application/soap+xml") {
-		body, err := ioutil.ReadAll(response.Body)
+		body, err := io.ReadAll(response.Body)
 		defer func() {
 			// defer can modify the returned value before
 			// it is actually passed to the calling statement
@@ -115,14 +115,14 @@ func (c clientRequest) Post(client *Client, request *soap.SoapMessage) (string, 
 	return body, err
 }
 
-//NewClientWithDial NewClientWithDial
+// NewClientWithDial NewClientWithDial
 func NewClientWithDial(dial func(network, addr string) (net.Conn, error)) *clientRequest {
 	return &clientRequest{
 		dial: dial,
 	}
 }
 
-//NewClientWithProxyFunc NewClientWithProxyFunc
+// NewClientWithProxyFunc NewClientWithProxyFunc
 func NewClientWithProxyFunc(proxyfunc func(req *http.Request) (*url.URL, error)) *clientRequest {
 	return &clientRequest{
 		proxyfunc: proxyfunc,
