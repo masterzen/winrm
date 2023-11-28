@@ -3,7 +3,7 @@ package winrm
 import (
 	"crypto/tls"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -12,13 +12,13 @@ import (
 	"github.com/masterzen/winrm/soap"
 )
 
-//ClientAuthRequest ClientAuthRequest
+// ClientAuthRequest ClientAuthRequest
 type ClientAuthRequest struct {
 	transport http.RoundTripper
 	dial      func(network, addr string) (net.Conn, error)
 }
 
-//Transport Transport
+// Transport Transport
 func (c *ClientAuthRequest) Transport(endpoint *Endpoint) error {
 	cert, err := tls.X509KeyPair(endpoint.Cert, endpoint.Key)
 	if err != nil {
@@ -64,7 +64,7 @@ func (c *ClientAuthRequest) Transport(endpoint *Endpoint) error {
 func parse(response *http.Response) (string, error) {
 	// if we received the content we expected
 	if strings.Contains(response.Header.Get("Content-Type"), "application/soap+xml") {
-		body, err := ioutil.ReadAll(response.Body)
+		body, err := io.ReadAll(response.Body)
 		defer func() {
 			// defer can modify the returned value before
 			// it is actually passed to the calling statement
@@ -82,7 +82,7 @@ func parse(response *http.Response) (string, error) {
 	return "", fmt.Errorf("invalid content type")
 }
 
-//Post Post
+// Post Post
 func (c ClientAuthRequest) Post(client *Client, request *soap.SoapMessage) (string, error) {
 	httpClient := &http.Client{Transport: c.transport}
 
@@ -115,7 +115,7 @@ func (c ClientAuthRequest) Post(client *Client, request *soap.SoapMessage) (stri
 	return body, err
 }
 
-//NewClientAuthRequestWithDial NewClientAuthRequestWithDial
+// NewClientAuthRequestWithDial NewClientAuthRequestWithDial
 func NewClientAuthRequestWithDial(dial func(network, addr string) (net.Conn, error)) *ClientAuthRequest {
 	return &ClientAuthRequest{
 		dial: dial,

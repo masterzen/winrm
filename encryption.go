@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -35,20 +35,23 @@ const (
 /*
 Encrypted Message Types
 When using Encryption, there are three options available
-	1. Negotiate/SPNEGO
-	2. Kerberos
-	3. CredSSP
 
-	protocol: The protocol string used for the particular auth protocol
+ 1. Negotiate/SPNEGO
 
-	The auth protocol used, will determine the wrapping and unwrapping method plus
-	the protocol string to use. Currently only NTLM is supported
+ 2. Kerberos
 
-	based on the python code from https://pypi.org/project/pywinrm/
+ 3. CredSSP
 
-	see https://github.com/diyan/pywinrm/blob/master/winrm/encryption.py
+    protocol: The protocol string used for the particular auth protocol
 
-	uses the most excellent NTLM library from https://github.com/bodgit/ntlmssp
+    The auth protocol used, will determine the wrapping and unwrapping method plus
+    the protocol string to use. Currently only NTLM is supported
+
+    based on the python code from https://pypi.org/project/pywinrm/
+
+    see https://github.com/diyan/pywinrm/blob/master/winrm/encryption.py
+
+    uses the most excellent NTLM library from https://github.com/bodgit/ntlmssp
 */
 func NewEncryption(protocol string) (*Encryption, error) {
 	encryption := &Encryption{
@@ -192,7 +195,7 @@ func (e *Encryption) ParseEncryptedResponse(response *http.Response) ([]byte, er
 	if strings.Contains(contentType, fmt.Sprintf(`protocol="%s"`, e.protocolString)) {
 		return e.decryptResponse(response, response.Request.URL.Hostname())
 	}
-	body, err := ioutil.ReadAll(response.Body)
+	body, err := io.ReadAll(response.Body)
 	response.Body.Close()
 	if err != nil {
 		return nil, err
@@ -232,7 +235,7 @@ func deleteEmpty(b [][]byte) [][]byte {
 // on call to textproto.ReadMIMEHeader
 // because of "The first line cannot start with a leading space."
 func (e *Encryption) decryptResponse(response *http.Response, host string) ([]byte, error) {
-	body, _ := ioutil.ReadAll(response.Body)
+	body, _ := io.ReadAll(response.Body)
 	parts := deleteEmpty(bytes.Split(body, []byte(fmt.Sprintf("%s\r\n", mimeBoundary))))
 	var message []byte
 

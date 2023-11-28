@@ -276,18 +276,17 @@ package main
 
 import (
     "github.com/masterzen/winrm"
-    "io/ioutil"
     "log"
     "os"
 )
 
 func main() {
-    clientCert, err := ioutil.ReadFile("/home/example/winrm_client_cert.pem")
+    clientCert, err := os.ReadFile("/home/example/winrm_client_cert.pem")
     if err != nil {
         log.Fatalf("failed to read client certificate: %q", err)
     }
 
-    clientKey, err := ioutil.ReadFile("/home/example/winrm_client_key.pem")
+    clientKey, err := os.ReadFile("/home/example/winrm_client_key.pem")
     if err != nil {
         log.Fatalf("failed to read client key: %q", err)
     }

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"strings"
 	"sync"
@@ -157,8 +156,8 @@ func (s *WinRMSuite) TestCloseCommandStopsFetch(c *C) {
 	client.http = &r
 	command, _ := shell.Execute("ipconfig /all")
 	// need to be reading Stdout/Stderr, otherwise, the writes to these are blocking...
-	go func() { _, _ = ioutil.ReadAll(command.Stdout) }()
-	go func() { _, _ = ioutil.ReadAll(command.Stderr) }()
+	go func() { _, _ = io.ReadAll(command.Stdout) }()
+	go func() { _, _ = io.ReadAll(command.Stderr) }()
 
 	httpChan <- outputResponse // wait for command to enter fetch/slurp
 
