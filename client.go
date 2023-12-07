@@ -80,7 +80,7 @@ func (c *Client) CreateShell() (*Shell, error) {
 	request := NewOpenShellRequest(c.url, &c.Parameters)
 	defer request.Free()
 
-	response, err := c.sendRequest(request)
+	response, err := c.SendRequest(request)
 	if err != nil {
 		return nil, err
 	}
@@ -98,8 +98,11 @@ func (c *Client) NewShell(id string) *Shell {
 	return &Shell{client: c, id: id}
 }
 
-// sendRequest exec the custom http func from the client
-func (c *Client) sendRequest(request *soap.SoapMessage) (string, error) {
+// SendRequest sends a raw SOAP message to the server and returns the
+// raw XML response as text or an error. This function is only useful 
+// if you want to use wsman/WinRM features that are not supported by
+// this library.
+func (c *Client) SendRequest(request *soap.SoapMessage) (string, error) {
 	return c.http.Post(c, request)
 }
 

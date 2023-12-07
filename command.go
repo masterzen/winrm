@@ -126,7 +126,7 @@ func (c *Command) Close() error {
 	request := NewSignalRequest(c.client.url, c.shell.id, c.id, &c.client.Parameters)
 	defer request.Free()
 
-	_, err := c.client.sendRequest(request)
+	_, err := c.client.SendRequest(request)
 	return err
 }
 
@@ -140,7 +140,7 @@ func (c *Command) slurpAllOutput() (bool, error) {
 	request := NewGetOutputRequest(c.client.url, c.shell.id, c.id, "stdout stderr", &c.client.Parameters)
 	defer request.Free()
 
-	response, err := c.client.sendRequest(request)
+	response, err := c.client.SendRequest(request)
 	if err != nil {
 		if strings.Contains(err.Error(), "OperationTimeout") {
 			// Operation timeout because there was no command output
@@ -186,7 +186,7 @@ func (c *Command) sendInput(data []byte, eof bool) error {
 	request := NewSendInputRequest(c.client.url, c.shell.id, c.id, data, eof, &c.client.Parameters)
 	defer request.Free()
 
-	_, err := c.client.sendRequest(request)
+	_, err := c.client.SendRequest(request)
 	return err
 }
 
