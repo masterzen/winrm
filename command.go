@@ -130,6 +130,10 @@ func (c *Command) Close() error {
 	return err
 }
 
+type errWithTimeout interface {
+	Timeout() bool
+}
+
 func (c *Command) slurpAllOutput() (bool, error) {
 	if err := c.check(); err != nil {
 		c.Stderr.write.CloseWithError(err)
@@ -142,6 +146,10 @@ func (c *Command) slurpAllOutput() (bool, error) {
 
 	response, err := c.client.sendRequest(request)
 	if err != nil {
+		if errWithTimeout, ok := err.(errWithTimeout); ok && errWithTimeout.Timeout() {
+			// Operation timeout possibly because there was no command output
+			return false, err
+		}
 		if strings.Contains(err.Error(), "OperationTimeout") {
 			// Operation timeout because there was no command output
 			return false, err
