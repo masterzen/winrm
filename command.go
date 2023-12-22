@@ -146,7 +146,8 @@ func (c *Command) slurpAllOutput() (bool, error) {
 
 	response, err := c.client.sendRequest(request)
 	if err != nil {
-		if errWithTimeout, ok := err.(errWithTimeout); ok && errWithTimeout.Timeout() {
+		var errWithTimeout url.Error
+		if errors.As(err, &errWithTimeout) && errWithTimeout.Timeout() {
 			// Operation timeout possibly because there was no command output
 			return false, err
 		}
