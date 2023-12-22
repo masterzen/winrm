@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/url"
 	"strings"
 	"sync"
 )
@@ -130,10 +131,6 @@ func (c *Command) Close() error {
 	return err
 }
 
-type errWithTimeout interface {
-	Timeout() bool
-}
-
 func (c *Command) slurpAllOutput() (bool, error) {
 	if err := c.check(); err != nil {
 		c.Stderr.write.CloseWithError(err)
@@ -146,9 +143,9 @@ func (c *Command) slurpAllOutput() (bool, error) {
 
 	response, err := c.client.sendRequest(request)
 	if err != nil {
-		var errWithTimeout url.Error
+		var errWithTimeout *url.Error
 		if errors.As(err, &errWithTimeout) && errWithTimeout.Timeout() {
-			// Operation timeout possibly because there was no command output
+			// Operation timeout because the server didn't respond in time
 			return false, err
 		}
 		if strings.Contains(err.Error(), "OperationTimeout") {
