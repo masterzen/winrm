@@ -1,11 +1,17 @@
 name: Go unit tests
 
-on: 
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+      - main
   pull_request:
     paths:
       - '**.go'
       - go.mod
       - go.sum
+      - '.github/workflows/go.yml'
 
 jobs:
   gotest:
@@ -21,4 +27,4 @@ jobs:
         check-latest: true
 
     - name: Test
-      run: go test -v ./...
+      run: make ci
