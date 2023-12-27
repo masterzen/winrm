@@ -71,7 +71,7 @@ func NewEncryption(protocol string) (*Encryption, error) {
 		*/
 	}
 
-	return nil, fmt.Errorf("Encryption for protocol '%s' not supported in winrm", protocol)
+	return nil, fmt.Errorf("Encryption for protocol '%s' not supported", protocol)
 }
 
 func (e *Encryption) Transport(endpoint *Endpoint) error {
@@ -281,7 +281,7 @@ func (e *Encryption) decryptMessage(encryptedData []byte, host string) ([]byte, 
 			return e.decryptKerberosMessage(encryptedData, host)
 		*/
 	default:
-		return nil, errors.New("Encryption for protocol " + e.protocol + " not supported in pywinrm")
+		return nil, errors.New("Encryption for protocol " + e.protocol + " not supported")
 	}
 }
 
@@ -340,7 +340,7 @@ func (e *Encryption) buildMessage(encryptedData []byte, host string) ([]byte, er
 			return e.buildKerberosMessage(encryptedData, host)
 		*/
 	default:
-		return nil, errors.New("Encryption for protocol " + e.protocol + " not supported in pywinrm")
+		return nil, errors.New("Encryption for protocol " + e.protocol + " not supported")
 	}
 }
 
