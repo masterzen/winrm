@@ -1,5 +1,5 @@
 run:
-  go: "1.14"
+  go: "1.21"
   deadline: 10m
   allow-parallel-runners: true
 linters:
@@ -39,6 +39,6 @@ linters-settings:
     ignore-generated-header: true
     severity: error
   staticcheck:
-    go: "1.14"
+    go: "1.21"
   stylecheck:
-    go: "1.14"
+    go: "1.21"
