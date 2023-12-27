@@ -20,13 +20,20 @@ type WinRMSuite struct{}
 var _ = Suite(&WinRMSuite{})
 
 func (s *WinRMSuite) TestOpenShellRequest(c *C) {
-	openShell := NewOpenShellRequest("http://localhost", nil)
+	parameters := NewParameters("PT60S", "en-US", 153600)
+	parameters.Cwd = "c:\\"
+	parameters.Env = map[string]string{
+		"foo": "bar",
+	}
+	openShell := NewOpenShellRequest("http://localhost", parameters)
 	defer openShell.Free()
 
 	assertXPath(c, openShell.Doc(), "//a:Action", "http://schemas.xmlsoap.org/ws/2004/09/transfer/Create")
 	assertXPath(c, openShell.Doc(), "//a:To", "http://localhost")
 	assertXPath(c, openShell.Doc(), "//env:Body/rsp:Shell/rsp:InputStreams", "stdin")
 	assertXPath(c, openShell.Doc(), "//env:Body/rsp:Shell/rsp:OutputStreams", "stdout stderr")
+	assertXPath(c, openShell.Doc(), "//env:Body/rsp:Shell/rsp:WorkingDirectory", "c:\\")
+	assertXPath(c, openShell.Doc(), "//env:Body/rsp:Shell/rsp:Environment/rsp:Variable[@Name=\"foo\"]", "bar")
 }
 
 func (s *WinRMSuite) TestDeleteShellRequest(c *C) {

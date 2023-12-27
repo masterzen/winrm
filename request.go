@@ -42,6 +42,18 @@ func NewOpenShellRequest(uri string, params *Parameters) *soap.SoapMessage {
 	input.SetContent("stdin")
 	output := message.CreateElement(body, "OutputStreams", soap.DOM_NS_WIN_SHELL)
 	output.SetContent("stdout stderr")
+	if len(params.Cwd) > 0 {
+		cwd := message.CreateElement(body, "WorkingDirectory", soap.DOM_NS_WIN_SHELL)
+		cwd.SetContent(params.Cwd)
+	}
+	if params.Env != nil {
+		env := message.CreateElement(body, "Environment", soap.DOM_NS_WIN_SHELL)
+		for name, value := range params.Env {
+			variable := message.CreateElement(env, "Variable", soap.DOM_NS_WIN_SHELL)
+			variable.SetAttr("Name", name)
+			variable.SetContent(value)
+		}
+	}
 
 	return message
 }

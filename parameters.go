@@ -7,6 +7,8 @@ import "net"
 type Parameters struct {
 	Timeout            string
 	Locale             string
+	Cwd                string
+	Env                map[string]string
 	EnvelopeSize       int
 	TransportDecorator func() Transporter
 	Dial               func(network, addr string) (net.Conn, error)
