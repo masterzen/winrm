@@ -11,6 +11,7 @@ on:
       - '**.go'
       - go.mod
       - go.sum
+      - '.github/workflows/go.yml'
 
 jobs:
   gotest:
