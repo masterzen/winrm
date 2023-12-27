@@ -120,6 +120,14 @@ func (e *Encryption) PrepareRequest(client *Client, endpoint string) error {
 		return fmt.Errorf("unknown error %w", err)
 	}
 
+	if _, err := io.ReadAll(resp.Body); err != nil {
+		return fmt.Errorf("read response body: %w", err)
+	}
+
+	if err := resp.Body.Close(); err != nil {
+		return fmt.Errorf("close request body: %w", err)
+	}
+
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("http error %d", resp.StatusCode)
 	}
