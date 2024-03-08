@@ -324,6 +324,85 @@ functions of the API will not cancel the HTTP requests themselves, it will
 rather cause a running command to be aborted on the remote machine via a call to
 `command.Stop()`.
 
+For setting winrm protocol options ([Remote Shell Options](https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-wsmv/593f3ed0-0c7a-4158-a4be-0b429b597e31#Appendix_A_Target_110) and [Command Options](https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-wsmv/c793e333-c409-43c6-a2eb-6ae2489c7ef4#Appendix_A_Target_117))
+
+```go
+package main
+import (
+  "github.com/masterzen/winrm"
+  "fmt"
+  "os"
+)
+
+endpoint := winrm.NewEndpoint("localhost", 5985, false, false, nil, nil, nil, 0)
+
+params := DefaultParameters
+params.RequestOptions["WINRS_NOPROFILE"] = "TRUE"
+params.RequestOptions["WINRS_CONSOLEMODE_STDIN"] = "FALSE"
+params.RequestOptions["WINRS_SKIP_CMD_SHELL"] = "TRUE"
+
+client, err := NewClientWithParameters(endpoint, "test", "test", params)
+if err != nil {
+	panic(err)
+}
+
+_, err := client.RunWithInput("ipconfig", os.Stdout, os.Stderr, os.Stdin)
+if err != nil {
+	panic(err)
+}
+
+```
+
+To get command output as a byte array, use ExecuteDirect on a shell
+NB: This also has a convenience function to write command strings
+
+```go
+package main
+
+import (
+  "github.com/masterzen/winrm"
+  "fmt"
+  "bytes"
+  "log"
+  "os"
+)
+
+endpoint := winrm.NewEndpoint("localhost", 5985, false, false,nil, nil, nil, 0)
+client , err := winrm.NewClient(endpoint, "Administrator", "secret")
+if err != nil {
+	panic(err)
+}
+shell, err := client.CreateShell()
+if err != nil {
+  panic(err)
+}
+var cmd *winrm.Command
+cmd, err = shell.ExecuteDirect("powershell.exe", "-NonInteractive", "-NoProfile", "-Command", "-")
+if err != nil {
+  panic(err)
+}
+err = cmd.SendCommand("$PSVersionTable.PSVersion | ConvertTo-Json")
+if err != nil {
+  panic(err)
+}
+stdin, stderr, finished, exitcode, err := cmd.ReadOutput()
+if err != nil {
+  panic(err)
+}
+log.Printf("Stdout: '%v'", string(stdout))
+log.Printf("Stderr: '%v'", string(stderr))
+
+var result map[string]int
+err = json.Unmarshal(stdout, &result)
+if err != nil {
+  panic(err)
+}
+log.Printf("Version: %d.%d-%d", result["Major"], result["Minor"], result["Build"])
+
+
+shell.Close()
+```
+
 ## Developing on WinRM
 
 If you wish to work on `winrm` itself, you'll first need [Go](http://golang.org)
