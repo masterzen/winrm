@@ -118,16 +118,16 @@ func (c *Command) Close() error {
 		return err
 	}
 
-	select { // close cancel channel if it's still open
-	case <-c.cancel:
-	default:
-		close(c.cancel)
-	}
+	close(c.cancel)
 
-	request := NewSignalRequest(c.client.url, c.shell.id, c.id, &c.client.Parameters)
+	id := c.id
+	c.id = ""
+
+	request := NewSignalRequest(c.client.url, c.shell.id, id, &c.client.Parameters)
 	defer request.Free()
 
 	_, err := c.client.sendRequest(request)
+
 	return err
 }
 
