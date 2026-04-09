@@ -144,7 +144,7 @@ func (c *Command) slurpAllOutput() (bool, error) {
 	response, err := c.client.sendRequest(request)
 	if err != nil {
 		var errWithTimeout *url.Error
-		if errors.As(err, &errWithTimeout) && errWithTimeout.Timeout() {
+		if !c.client.AllowTimeout && errors.As(err, &errWithTimeout) && errWithTimeout.Timeout() {
 			// Operation timeout because the server didn't respond in time
 			return false, err
 		}

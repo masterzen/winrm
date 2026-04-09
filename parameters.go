@@ -8,6 +8,7 @@ type Parameters struct {
 	Timeout            string
 	Locale             string
 	EnvelopeSize       int
+	AllowTimeout       bool // Allow Commands to finish if connection times out. Useful if the command causes the Host to shut down.
 	TransportDecorator func() Transporter
 	Dial               func(network, addr string) (net.Conn, error)
 }
