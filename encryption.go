@@ -93,10 +93,16 @@ func (e *Encryption) Post(client *Client, message *soap.SoapMessage) (string, er
 		userName = client.username
 	}
 
-	e.ntlmClient, _ = ntlmssp.NewClient(ntlmssp.SetUserInfo(userName, client.password), ntlmssp.SetDomain(domain), ntlmssp.SetVersion(ntlmssp.DefaultVersion()))
-	e.ntlmhttp, _ = ntlmhttp.NewClient(e.httpClient, e.ntlmClient)
-
 	var err error
+	e.ntlmClient, err = ntlmssp.NewClient(ntlmssp.SetUserInfo(userName, client.password), ntlmssp.SetDomain(domain), ntlmssp.SetVersion(ntlmssp.DefaultVersion()))
+	if err != nil {
+		return "", err
+	}
+	e.ntlmhttp, err = ntlmhttp.NewClient(e.httpClient, e.ntlmClient)
+	if err != nil {
+		return "", err
+	}
+
 	if err = e.PrepareRequest(client, client.url); err == nil {
 		return e.PrepareEncryptedRequest(client, client.url, []byte(message.String()))
 	} else {
