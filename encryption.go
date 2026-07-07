@@ -2,6 +2,7 @@ package winrm
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/bodgit/ntlmssp"
 	ntlmhttp "github.com/bodgit/ntlmssp/http"
@@ -23,6 +25,9 @@ type Encryption struct {
 	httpClient     *http.Client
 	ntlmClient     *ntlmssp.Client
 	ntlmhttp       *ntlmhttp.Client
+	tlsConn        *tls.Conn
+	credsspConn    *credSSPMemoryConn
+	timeout        time.Duration
 }
 
 const (
@@ -63,11 +68,12 @@ func NewEncryption(protocol string) (*Encryption, error) {
 	case "ntlm":
 		encryption.protocolString = []byte("application/HTTP-SPNEGO-session-encrypted")
 		return encryption, nil
-		/* credssp and kerberos is currently unimplemented, leave holder for future to keep in sync with python implementation
-		case "credssp":
-			encryption.protocolString = []byte("application/HTTP-CredSSP-session-encrypted")
+	case "credssp":
+		encryption.protocolString = []byte("application/HTTP-CredSSP-session-encrypted")
+		return encryption, nil
+		/* kerberos is currently unimplemented, leave holder for future to keep in sync with python implementation
 		case "kerberos": // kerberos is currently unimplemented, leave holder for future to keep in sync with python implementation
-			encryption.protocolString = []byte("application/HTTP-SPNEGO-session-encrypted")
+				encryption.protocolString = []byte("application/HTTP-SPNEGO-session-encrypted")
 		*/
 	}
 
@@ -80,19 +86,9 @@ func (e *Encryption) Transport(endpoint *Endpoint) error {
 }
 
 func (e *Encryption) Post(client *Client, message *soap.SoapMessage) (string, error) {
-	var userName, domain string
-	if strings.Contains(client.username, "@") {
-		parts := strings.Split(client.username, "@")
-		domain = parts[1]
-		userName = parts[0]
-	} else if strings.Contains(client.username, "\\") {
-		parts := strings.Split(client.username, "\\")
-		domain = parts[0]
-		userName = parts[1]
-	} else {
-		userName = client.username
-	}
-
+	// Note: CredSSP does not use this path. ClientCredSSP.Post drives the
+	// handshake and calls PrepareEncryptedRequest directly.
+	userName, domain := splitUsername(client.username)
 	e.ntlmClient, _ = ntlmssp.NewClient(ntlmssp.SetUserInfo(userName, client.password), ntlmssp.SetDomain(domain), ntlmssp.SetVersion(ntlmssp.DefaultVersion()))
 	e.ntlmhttp, _ = ntlmhttp.NewClient(e.httpClient, e.ntlmClient)
 
@@ -158,15 +154,25 @@ func (e *Encryption) PrepareEncryptedRequest(client *Client, endpoint string, me
 		encrypted_message = []byte{}
 		message_chunks := [][]byte{}
 		for i := 0; i < len(message); i += sixTenKB {
-			message_chunks = append(message_chunks, message[i:i+sixTenKB])
+			end := i + sixTenKB
+			if end > len(message) {
+				end = len(message)
+			}
+			message_chunks = append(message_chunks, message[i:end])
 		}
 		for _, message_chunk := range message_chunks {
-			encrypted_chunk := e.encryptMessage(message_chunk, host)
+			encrypted_chunk, err := e.encryptMessage(message_chunk, host)
+			if err != nil {
+				return "", err
+			}
 			encrypted_message = append(encrypted_message, encrypted_chunk...)
 		}
 	} else {
 		content_type = "multipart/encrypted"
-		encrypted_message = e.encryptMessage(message, host)
+		encrypted_message, err = e.encryptMessage(message, host)
+		if err != nil {
+			return "", err
+		}
 	}
 
 	encrypted_message = append(encrypted_message, []byte(mimeBoundary)...)
@@ -182,9 +188,26 @@ func (e *Encryption) PrepareEncryptedRequest(client *Client, endpoint string, me
 	req.Header.Set("Content-Length", fmt.Sprintf("%d", len(encrypted_message)))
 	req.Header.Set("Content-Type", fmt.Sprintf(`%s;protocol="%s";boundary="Encrypted Boundary"`, content_type, e.protocolString))
 
-	resp, err := e.ntlmhttp.Do(req)
+	var resp *http.Response
+	switch e.protocol {
+	case "ntlm":
+		resp, err = e.ntlmhttp.Do(req)
+	case "credssp":
+		resp, err = e.httpClient.Do(req)
+	default:
+		return "", errors.New("Encryption for protocol " + e.protocol + " not supported")
+	}
 	if err != nil {
 		return "", fmt.Errorf("unknown error %w", err)
+	}
+
+	// A 401 on an encrypted CredSSP request means the connection is no longer
+	// authenticated (typically re-dialed after the server dropped the pinned
+	// socket). Signal the transport to re-run the handshake.
+	if e.protocol == "credssp" && resp.StatusCode == http.StatusUnauthorized {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+		return "", errCredSSPReauthRequired
 	}
 
 	body, err := e.ParseEncryptedResponse(resp)
@@ -211,8 +234,13 @@ func (e *Encryption) ParseEncryptedResponse(response *http.Response) ([]byte, er
 	return body, nil
 }
 
-func (e *Encryption) encryptMessage(message []byte, host string) []byte {
-	encryptedStream, _ := e.buildMessage(message, host)
+func (e *Encryption) encryptMessage(message []byte, host string) ([]byte, error) {
+	// For CredSSP, buildMessage performs a real TLS write that can fail or time
+	// out, so the error must be surfaced rather than producing a malformed body.
+	encryptedStream, err := e.buildMessage(message, host)
+	if err != nil {
+		return nil, err
+	}
 
 	messagePayload := bytes.Join([][]byte{
 		[]byte(mimeBoundary),
@@ -225,7 +253,7 @@ func (e *Encryption) encryptMessage(message []byte, host string) []byte {
 		encryptedStream,
 	}, []byte{})
 
-	return messagePayload
+	return messagePayload, nil
 }
 
 func deleteEmpty(b [][]byte) [][]byte {
@@ -262,7 +290,7 @@ func (e *Encryption) decryptResponse(response *http.Response, host string) ([]by
 			payload = payload[:len(payload)-boundaryLength-4]
 		}
 		encryptedData := bytes.ReplaceAll(payload, []byte("\tContent-Type: application/octet-stream\r\n"), []byte{})
-		decryptedMessage, err := e.decryptMessage(encryptedData, host)
+		decryptedMessage, err := e.decryptMessage(encryptedData, host, expectedLength)
 		if err != nil {
 			return nil, err
 		}
@@ -278,16 +306,14 @@ func (e *Encryption) decryptResponse(response *http.Response, host string) ([]by
 	return message, nil
 }
 
-func (e *Encryption) decryptMessage(encryptedData []byte, host string) ([]byte, error) {
+func (e *Encryption) decryptMessage(encryptedData []byte, host string, expectedLength int) ([]byte, error) {
 	switch e.protocol {
 	case "ntlm":
 		return e.decryptNtlmMessage(encryptedData, host)
-		/* credssp and kerberos is currently unimplemented, leave holder for future to keep in sync with python implementation
-		case "credssp":
-			return e.decryptCredsspMessage(encryptedData, host)
-		case "kerberos":
-			return e.decryptKerberosMessage(encryptedData, host)
-		*/
+	case "credssp":
+		return e.decryptCredsspMessage(encryptedData, host, expectedLength)
+	case "kerberos":
+		return e.decryptKerberosMessage(encryptedData, host)
 	default:
 		return nil, errors.New("Encryption for protocol " + e.protocol + " not supported")
 	}
@@ -305,21 +331,33 @@ func (e *Encryption) decryptNtlmMessage(encryptedData []byte, host string) ([]by
 	return message, nil
 }
 
-/* credssp and kerberos is currently unimplemented, leave holder for future to keep in sync with python implementation
-func (e *Encryption) decryptCredsspMessage(encryptedData []byte, host string) ([]byte, error) {
-	// // TODO
-	// encryptedMessage := encryptedData[4:]
+func (e *Encryption) decryptCredsspMessage(encryptedData []byte, host string, expectedLength int) ([]byte, error) {
+	if e.tlsConn == nil || e.credsspConn == nil {
+		return nil, errors.New("credssp tls context not initialized")
+	}
+	if len(encryptedData) < 4 {
+		return nil, errors.New("credssp encrypted payload too short")
+	}
 
-	// credsspContext, ok := e.session.Auth.Contexts()[host]
-	// if !ok {
-	// 	return nil, fmt.Errorf("credssp context not found for host: %s", host)
-	// }
+	// Skip the 4-byte CredSSP trailer length prefix and feed the wrapped TLS
+	// record(s) into the tunnel.
+	sealed := encryptedData[4:]
+	if err := e.credsspConn.pushIncoming(sealed); err != nil {
+		return nil, err
+	}
 
-	// message, err := credsspContext.Unwrap(encryptedMessage)
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// return message, nil
+	_ = e.tlsConn.SetReadDeadline(time.Now().Add(credSSPTimeout(e.timeout)))
+	defer e.tlsConn.SetReadDeadline(time.Time{})
+
+	// The plaintext length is authoritatively given by the MIME OriginalContent
+	// header. A single Read returns at most one TLS record's plaintext, so read
+	// the full declared length across however many records it spans.
+	message := make([]byte, expectedLength)
+	if _, err := io.ReadFull(e.tlsConn, message); err != nil {
+		return nil, err
+	}
+
+	return message, nil
 }
 
 func (enc *Encryption) decryptKerberosMessage(encryptedData []byte, host string) ([]byte, error) {
@@ -334,19 +372,17 @@ func (enc *Encryption) decryptKerberosMessage(encryptedData []byte, host string)
 	// }
 
 	// return message, nil
+	return nil, errors.New("kerberos encryption is not implemented")
 }
-*/
 
 func (e *Encryption) buildMessage(encryptedData []byte, host string) ([]byte, error) {
 	switch e.protocol {
 	case "ntlm":
 		return e.buildNTLMMessage(encryptedData, host)
-		/* credssp and kerberos is currently unimplemented, leave holder for future to keep in sync with python implementation
-		case "credssp":
-			return e.buildCredSSPMessage(encryptedData, host)
-		case "kerberos":
-			return e.buildKerberosMessage(encryptedData, host)
-		*/
+	case "credssp":
+		return e.buildCredSSPMessage(encryptedData, host)
+	case "kerberos":
+		return e.buildKerberosMessage(encryptedData, host)
 	default:
 		return nil, errors.New("Encryption for protocol " + e.protocol + " not supported")
 	}
@@ -372,19 +408,27 @@ func (enc *Encryption) buildNTLMMessage(message []byte, host string) ([]byte, er
 	return buf.Bytes(), nil
 }
 
-/* credssp and kerberos is currently unimplemented, leave holder for future to keep in sync with python implementation
 func (e *Encryption) buildCredSSPMessage(message []byte, host string) ([]byte, error) {
-	// //TODO
-	// context := e.session.Auth.Contexts[host]
-	// sealedMessage := context.Wrap(message)
+	if e.tlsConn == nil || e.credsspConn == nil {
+		return nil, errors.New("credssp tls context not initialized")
+	}
 
-	// cipherNegotiated := context.TLSConnection.ConnectionState().CipherSuite.Name
-	// trailerLength := e.getCredSSPTrailerLength(len(message), cipherNegotiated)
+	if _, err := e.tlsConn.Write(message); err != nil {
+		return nil, err
+	}
+	sealedFirst, err := e.credsspConn.popOutgoing(credSSPTimeout(e.timeout))
+	if err != nil {
+		return nil, err
+	}
+	sealedMessage := e.credsspConn.drainOutgoing(sealedFirst)
 
-	// trailer := make([]byte, 4)
-	// binary.LittleEndian.PutUint32(trailer, uint32(trailerLength))
+	cipherSuite := tls.CipherSuiteName(e.tlsConn.ConnectionState().CipherSuite)
+	trailerLength := e.getCredSSPTrailerLength(len(message), cipherSuite)
 
-	// return append(trailer, sealedMessage...), nil
+	trailer := make([]byte, 4)
+	binary.LittleEndian.PutUint32(trailer, uint32(trailerLength))
+
+	return append(trailer, sealedMessage...), nil
 }
 
 func (e *Encryption) buildKerberosMessage(message []byte, host string) ([]byte, error) {
@@ -395,44 +439,68 @@ func (e *Encryption) buildKerberosMessage(message []byte, host string) ([]byte, 
 	// binary.LittleEndian.PutUint32(signatureLength, uint32(len(signature)))
 
 	// return append(append(signatureLength, signature...), sealedMessage...), nil
+	return nil, errors.New("kerberos encryption is not implemented")
 }
 
 func (e *Encryption) getCredSSPTrailerLength(messageLength int, cipherSuite string) int {
 	var trailerLength int
 
-	if match, _ := regexp.MatchString("^.*-GCM-[\\w\\d]*$", cipherSuite); match {
+	if strings.Contains(cipherSuite, "_GCM_") || strings.Contains(cipherSuite, "-GCM-") {
 		trailerLength = 16
 	} else {
-		hashAlgorithm := cipherSuite[strings.LastIndex(cipherSuite, "-")+1:]
-		var hashLength int
+		hashAlgorithm := ""
+		if strings.Contains(cipherSuite, "_") {
+			hashAlgorithm = cipherSuite[strings.LastIndex(cipherSuite, "_")+1:]
+		} else if strings.Contains(cipherSuite, "-") {
+			hashAlgorithm = cipherSuite[strings.LastIndex(cipherSuite, "-")+1:]
+		}
 
-		if hashAlgorithm == "MD5" {
+		var hashLength int
+		switch hashAlgorithm {
+		case "MD5":
 			hashLength = 16
-		} else if hashAlgorithm == "SHA" {
+		case "SHA":
 			hashLength = 20
-		} else if hashAlgorithm == "SHA256" {
+		case "SHA256":
 			hashLength = 32
-		} else if hashAlgorithm == "SHA384" {
+		case "SHA384":
 			hashLength = 48
-		} else {
+		default:
 			hashLength = 0
 		}
 
 		prePadLength := messageLength + hashLength
 		paddingLength := 0
 
-		if strings.Contains(cipherSuite, "RC4") {
+		if strings.Contains(cipherSuite, "RC4") || strings.Contains(cipherSuite, "CHACHA20") {
 			paddingLength = 0
-		} else if strings.Contains(cipherSuite, "DES") || strings.Contains(cipherSuite, "3DES") {
+		} else if strings.Contains(cipherSuite, "3DES") || strings.Contains(cipherSuite, "DES") {
 			paddingLength = 8 - (prePadLength % 8)
+			if paddingLength == 8 {
+				paddingLength = 0
+			}
 
 		} else {
 			// AES is a 128 bit block cipher
 			paddingLength = 16 - (prePadLength % 16)
+			if paddingLength == 16 {
+				paddingLength = 0
+			}
 		}
 
 		trailerLength = (prePadLength + paddingLength) - messageLength
 	}
 	return trailerLength
 }
-*/
+
+func splitUsername(input string) (string, string) {
+	if strings.Contains(input, "@") {
+		parts := strings.SplitN(input, "@", 2)
+		return parts[0], parts[1]
+	}
+	if strings.Contains(input, "\\") {
+		parts := strings.SplitN(input, "\\", 2)
+		return parts[1], parts[0]
+	}
+	return input, ""
+}
