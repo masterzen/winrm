@@ -5,7 +5,8 @@ _Note_: if you're looking for the `winrm` command-line tool, this has been split
 This is a Go library to execute remote commands on Windows machines through
 the use of WinRM/WinRS.
 
-_Note_: this library doesn't support domain users (it doesn't support GSSAPI nor Kerberos). It's primary target is to execute remote commands on EC2 windows machines.
+The library supports domain users through Kerberos, including WinRM message
+encryption over HTTP.
 
 [![Build Status](https://travis-ci.org/masterzen/winrm.svg?branch=master)](https://travis-ci.org/masterzen/winrm)
 [![Coverage Status](https://coveralls.io/repos/masterzen/winrm/badge.png)](https://coveralls.io/r/masterzen/winrm)
@@ -48,10 +49,13 @@ On the remote host, a PowerShell prompt, using the __Run as Administrator__ opti
 
                 winrm quickconfig
                 y
-                winrm set winrm/config/service '@{AllowUnencrypted="true"}'
                 winrm set winrm/config/winrs '@{MaxMemoryPerShellMB="1024"}'
 
-All __N.B__ points of "Preparing the remote Windows machine for Basic authentication" also applies.
+Kerberos can protect the SOAP message body when `MessageEncryption` is enabled,
+so `AllowUnencrypted=true` is not required. HTTPS remains useful because it also
+protects HTTP headers and provides certificate-based server identity.
+
+All other __N.B__ points of "Preparing the remote Windows machine for Basic authentication" also apply.
 
 
 ### Building the winrm go and executable
@@ -151,45 +155,152 @@ if err != nil {
 
 ```
 
-Passing a TransportDecorator also permit to use Kerberos authentication
+Passing a `TransportDecorator` also permits Kerberos authentication:
 
 ```go
 package main
+
 import (
-  "os"
-  "fmt"
-  "github.com/masterzen/winrm"
+	"context"
+	"os"
+
+	"github.com/masterzen/winrm"
 )
 
-endpoint := winrm.NewEndpoint("srv-win", 5985, false, false, nil, nil, nil, 0)
+func main() {
+	endpoint := winrm.NewEndpoint("srv-win", 5985, false, false, nil, nil, nil, 0)
 
-params := winrm.DefaultParameters
-params.TransportDecorator = func() Transporter {
-        return &winrm.ClientKerberos{
-		Username: "test",
-		Password: "s3cr3t",
-		Hostname: "srv-win",
-		Realm: "DOMAIN.LAN",
-		Port: 5985,
-		Proto: "http",
-		KrbConf: "/etc/krb5.conf",
-		SPN: fmt.Sprintf("HTTP/%s", hostname),
+	params := *winrm.DefaultParameters
+	params.TransportDecorator = func() winrm.Transporter {
+		return &winrm.ClientKerberos{
+			Username:          "test",
+			Password:          "s3cr3t",
+			Hostname:          "srv-win",
+			Realm:             "DOMAIN.LAN",
+			Port:              5985,
+			Proto:             "http",
+			KrbConf:           "/etc/krb5.conf",
+			SPN:               "HTTP/srv-win",
+			MessageEncryption: true,
+		}
+	}
+
+	client, err := winrm.NewClientWithParameters(endpoint, "test", "s3cr3t", &params)
+	if err != nil {
+		panic(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	_, err = client.RunWithContextWithInput(ctx, "ipconfig", os.Stdout, os.Stderr, os.Stdin)
+	if err != nil {
+		panic(err)
 	}
 }
 
-client, err := NewClientWithParameters(endpoint, "test", "s3cr3t", params)
-if err != nil {
-        panic(err)
-}
-
-ctx, cancel := context.WithCancel(context.Background())
-defer cancel()
-_, err := client.RunWithContextWithInput(ctx, "ipconfig", os.Stdout, os.Stderr, os.Stdin)
-if err != nil {
-        panic(err)
-}
-
 ```
+
+`MessageEncryption` is opt-in to preserve compatibility with existing callers.
+When enabled, the client establishes a mutually authenticated Kerberos context,
+encrypts each SOAP request using the negotiated Kerberos enctype, and requires
+encrypted responses. Password and credential-cache authentication are both
+supported. Set `KrbCCache` instead of `Password` to use a cache.
+
+The protocol-selected encryption constructors accept `"ntlm"` and
+`"kerberos"`. For Kerberos, `NewEncryptionWithSettings` applies the same
+settings shown above and delegates authentication and message protection to
+`ClientKerberos`. CredSSP is intentionally not accepted until a CredSSP
+authentication transport is available.
+
+Kerberos message encryption supports AES128/AES256 SHA-1 and SHA-2 enctypes,
+and legacy RC4-HMAC. AES is strongly preferred. The export-strength RC4
+enctype is not supported.
+
+The SPN should normally be `HTTP/fully-qualified-hostname`; using an IP address
+usually fails because it does not identify the host's registered service
+principal. A `ClientKerberos` serializes requests because GSS message sequence
+numbers are stateful.
+
+### Kerberos configuration
+
+Kerberos requires a MIT/Heimdal-style `krb5.conf` file. The Go Kerberos
+library reads this file to determine the default realm and how to locate the
+realm's KDC. `ClientKerberos.KrbConf` must point to the file; the library does not
+create one or discover its location automatically.
+
+A minimal Active Directory configuration is:
+
+```ini
+[libdefaults]
+    default_realm = EXAMPLE.COM
+    dns_lookup_kdc = false
+    dns_lookup_realm = false
+
+[realms]
+    EXAMPLE.COM = {
+        kdc = dc01.example.com
+        admin_server = dc01.example.com
+    }
+
+[domain_realm]
+    .example.com = EXAMPLE.COM
+    example.com = EXAMPLE.COM
+```
+
+Replace the realm, domain, and domain-controller names with values from the
+Active Directory environment. A domain controller provides the KDC service,
+normally on TCP and UDP port 88. Instead of listing a KDC explicitly, DNS SRV
+discovery can be enabled with `dns_lookup_kdc = true`, provided the client can
+resolve the domain's `_kerberos._tcp` records.
+
+Kerberos also requires synchronized clocks; a substantial time difference
+between the client and KDC will cause authentication to fail. Use the server's
+fully qualified hostname and its registered SPN, normally
+`HTTP/server.example.com`, rather than an IP address.
+
+### Kerberos over HTTP with message encryption
+
+For an HTTP endpoint, enable `MessageEncryption` when constructing the
+Kerberos transport. The endpoint and SPN must use the server hostname, not its
+IP address:
+
+```go
+endpoint := winrm.NewEndpoint("srv-win.example.com", 5985, false, false, nil, nil, nil, 0)
+
+params := *winrm.DefaultParameters
+params.TransportDecorator = func() winrm.Transporter {
+	return &winrm.ClientKerberos{
+		Username:          "alice",
+		Password:          "password",
+		Hostname:          "srv-win.example.com",
+		Realm:             "EXAMPLE.COM",
+		Port:              5985,
+		Proto:             "http",
+		KrbConf:           "/etc/krb5.conf",
+		SPN:               "HTTP/srv-win.example.com",
+		MessageEncryption: true,
+	}
+}
+```
+
+The client first performs the normal `Negotiate` exchange. After the Kerberos
+security context is established, each SOAP message is encrypted using the
+negotiated GSS context. The initial `401` responses are expected; encrypted
+requests do not need to repeat the `Authorization` header.
+
+Before troubleshooting WinRM, verify that:
+
+- the client can reach the configured KDC on TCP/UDP port 88;
+- the client and domain controller clocks are synchronized;
+- the configured SPN exists for the target hostname;
+- the hostname resolves to the intended Windows host; and
+- the account has permission to use WinRM on that host.
+
+Message encryption is intended for HTTP. HTTPS already encrypts the transport,
+although message encryption can still be requested explicitly. Kerberos and
+NTLM use the WinRM SPNEGO encrypted-message content type; CredSSP is not yet
+available through the Kerberos encryption constructors. AES enctypes are
+preferred; RC4-HMAC is retained only for legacy interoperability.
 
 
 By passing a Dial in the Parameters struct it is possible to use different dialer (e.g. tunnel through SSH)

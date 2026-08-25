@@ -28,7 +28,7 @@ func (c ClientNTLM) Post(client *Client, request *soap.SoapMessage) (string, err
 	return c.clientRequest.Post(client, request)
 }
 
-//NewClientNTLMWithDial NewClientNTLMWithDial
+// NewClientNTLMWithDial NewClientNTLMWithDial
 func NewClientNTLMWithDial(dial func(network, addr string) (net.Conn, error)) *ClientNTLM {
 	return &ClientNTLM{
 		clientRequest{
@@ -37,7 +37,7 @@ func NewClientNTLMWithDial(dial func(network, addr string) (net.Conn, error)) *C
 	}
 }
 
-//NewClientNTLMWithProxyFunc NewClientNTLMWithProxyFunc
+// NewClientNTLMWithProxyFunc NewClientNTLMWithProxyFunc
 func NewClientNTLMWithProxyFunc(proxyfunc func(req *http.Request) (*url.URL, error)) *ClientNTLM {
 	return &ClientNTLM{
 		clientRequest{
