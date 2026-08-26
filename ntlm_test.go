@@ -36,9 +36,9 @@ func (s *WinRMSuite) TestHttpNTLMRequest(c *C) {
 	defer ts.Close()
 	endpoint := NewEndpoint(host, port, false, false, nil, nil, nil, 0)
 
-	params := DefaultParameters
+	params := *DefaultParameters
 	params.TransportDecorator = func() Transporter { return &ClientNTLM{} }
-	client, err := NewClientWithParameters(endpoint, "test", "test", params)
+	client, err := NewClientWithParameters(endpoint, "test", "test", &params)
 
 	c.Assert(err, IsNil)
 	shell, err := client.CreateShell()
@@ -65,9 +65,9 @@ func (s *WinRMSuite) TestHttpNTLMViaCustomDialerRequest(c *C) {
 	defer ts.Close()
 	endpoint := NewEndpoint(host, port, false, false, nil, nil, nil, 0)
 
-	params := DefaultParameters
+	params := *DefaultParameters
 	params.TransportDecorator = func() Transporter { return NewClientNTLMWithDial(dial) }
-	client, err := NewClientWithParameters(endpoint, "test", "test", params)
+	client, err := NewClientWithParameters(endpoint, "test", "test", &params)
 	c.Assert(err, IsNil)
 	_, err = client.CreateShell()
 	c.Assert(err, IsNil)
