@@ -49,6 +49,15 @@ var (
 	</s:Body>
 	</s:Envelope>`
 
+	// Some WinRM implementations, including Windows 7, return the ShellId only
+	// as a WS-Man selector rather than as an rsp:ShellId element.
+	createShellResponseWithSelectorOnly = strings.Replace(
+		createShellResponse,
+		`<rsp:ShellId>67A74734-DD32-4F10-89DE-49A060483810</rsp:ShellId>`,
+		"",
+		1,
+	)
+
 	createShellResponseWithError = `<s:Envelope xml:lang="en-US"
 	xmlns:s="http://www.w3.org/2003/05/soap-envelope"
 	xmlns:a="http://schemas.xmlsoap.org/ws/2004/08/addressing"

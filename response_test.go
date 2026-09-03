@@ -17,6 +17,17 @@ func (s *WinRMSuite) TestOpenShellResponse(c *C) {
 	c.Assert("67A74734-DD32-4F10-89DE-49A060483810", Equals, shellID)
 }
 
+func (s *WinRMSuite) TestOpenShellResponseWithSelectorOnly(c *C) {
+	response := createShellResponseWithSelectorOnly
+
+	shellID, err := ParseOpenShellResponse(response)
+	if err != nil {
+		c.Fatalf("response didn't parse: %s", err)
+	}
+
+	c.Assert("67A74734-DD32-4F10-89DE-49A060483810", Equals, shellID)
+}
+
 func (s *WinRMSuite) TestOpenShellResponseError(c *C) {
 	response := createShellResponseWithError
 	shellId, err := ParseOpenShellResponse(response)
