@@ -1,6 +1,7 @@
 package winrm
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"io"
@@ -69,7 +70,7 @@ func (c *clientRequest) Transport(endpoint *Endpoint) error {
 		ResponseHeaderTimeout: endpoint.Timeout,
 	}
 
-	if endpoint.CACert != nil && len(endpoint.CACert) > 0 {
+	if len(endpoint.CACert) > 0 {
 		certPool, err := readCACerts(endpoint.CACert)
 		if err != nil {
 			return err
@@ -87,8 +88,7 @@ func (c *clientRequest) Transport(endpoint *Endpoint) error {
 func (c clientRequest) Post(client *Client, request *soap.SoapMessage) (string, error) {
 	httpClient := &http.Client{Transport: c.transport}
 
-	//nolint:noctx
-	req, err := http.NewRequest("POST", client.url, strings.NewReader(request.String()))
+	req, err := http.NewRequestWithContext(context.Background(), "POST", client.url, strings.NewReader(request.String()))
 	if err != nil {
 		return "", fmt.Errorf("impossible to create http request %w", err)
 	}

@@ -34,7 +34,7 @@ func (r *Requester) Transport(endpoint *Endpoint) error {
 		Dial:                  r.dial,
 	}
 
-	if endpoint.CACert != nil && len(endpoint.CACert) > 0 {
+	if len(endpoint.CACert) > 0 {
 		certPool, err := readCACerts(endpoint.CACert)
 		if err != nil {
 			return err
