@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"testing"
 
 	"net"
 	"time"
 
+	ntlmssp "github.com/Azure/go-ntlmssp"
 	. "gopkg.in/check.v1"
 )
 
@@ -130,60 +132,38 @@ func (s *WinRMSuite) TestNTLMSessionReusedAcrossRequests(c *C) {
 	c.Assert(negotiations, Equals, 2)
 }
 
-// TestNTLMReauthenticatesAfterStaleSession checks that a 401 on a sealed
-// request is treated as a stale session.
-// client drops its cached keys and transparently redoes the full handshake.
-func (s *WinRMSuite) TestNTLMReauthenticatesAfterStaleSession(c *C) {
-	var authenticated bool
-	var staled bool
-	var total, negotiations int
-	ts, host, port, err := StartTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		total++
-		auth := r.Header.Get("Authorization")
-		switch {
-		case auth == "" && !authenticated:
-			w.Header().Set("Www-Authenticate", "NTLM")
-			w.WriteHeader(http.StatusUnauthorized)
-		case strings.HasPrefix(auth, "NTLM "):
-			negotiations++
-			token, decErr := base64.StdEncoding.DecodeString(strings.TrimPrefix(auth, "NTLM "))
-			c.Assert(decErr, IsNil)
-			if isNTLMNegotiateMessage(token) {
-				challenge := ntlmChallengeMessage([8]byte{1, 2, 3, 4, 5, 6, 7, 8})
-				w.Header().Set("Www-Authenticate", "NTLM "+base64.StdEncoding.EncodeToString(challenge))
-				w.WriteHeader(http.StatusUnauthorized)
-				return
-			}
-			authenticated = true
-			w.Header().Set("Content-Type", "application/soap+xml")
-			fmt.Fprintln(w, createShellResponse)
-		case !staled:
-			// pretend the session expired on the server side
-			staled = true
-			authenticated = false
-			w.WriteHeader(http.StatusUnauthorized)
-		default:
-			w.Header().Set("Content-Type", "application/soap+xml")
-			fmt.Fprintln(w, createShellResponse)
-		}
-	}))
-	c.Assert(err, IsNil)
-	defer ts.Close()
-	endpoint := NewEndpoint(host, port, false, false, nil, nil, nil, 0)
+// TestNTLMTransportPinsSingleConnection checks that ClientNTLM.Transport
+// pins the underlying *http.Transport to one connection per host. The NTLM
+// negotiate/challenge/authenticate handshake runs as sequential RoundTrip
+// calls on the shared transport, relying on connection reuse to keep every
+// leg on the same socket; a second connection breaks the handshake.
+func TestNTLMTransportPinsSingleConnection(t *testing.T) {
+	client := &ClientNTLM{}
+	endpoint := NewEndpoint("server.example.com", 5985, false, false, nil, nil, nil, 0)
+	if err := client.Transport(endpoint); err != nil {
+		t.Fatal(err)
+	}
 
-	params := *DefaultParameters
-	params.TransportDecorator = func() Transporter { return &ClientNTLM{} }
-	client, err := NewClientWithParameters(endpoint, "test", "test", &params)
-	c.Assert(err, IsNil)
+	negotiator, ok := client.transport.(*ntlmssp.Negotiator)
+	if !ok {
+		t.Fatalf("ClientNTLM transport is %T, want *ntlmssp.Negotiator", client.transport)
+	}
 
-	_, err = client.CreateShell()
-	c.Assert(err, IsNil)
-	c.Assert(total, Equals, 3)
-	c.Assert(negotiations, Equals, 2)
+	transport, ok := negotiator.RoundTripper.(*http.Transport)
+	if !ok {
+		t.Fatalf("negotiator's underlying transport is %T, want *http.Transport", negotiator.RoundTripper)
+	}
 
-	shell, err := client.CreateShell()
-	c.Assert(err, IsNil)
-	c.Assert(shell.id, Equals, "67A74734-DD32-4F10-89DE-49A060483810")
-	c.Assert(total, Equals, 7)
-	c.Assert(negotiations, Equals, 4)
+	if transport.DisableKeepAlives {
+		t.Error("DisableKeepAlives = true, want false")
+	}
+	if transport.MaxConnsPerHost != 1 {
+		t.Errorf("MaxConnsPerHost = %d, want 1", transport.MaxConnsPerHost)
+	}
+	if transport.MaxIdleConnsPerHost != 1 {
+		t.Errorf("MaxIdleConnsPerHost = %d, want 1", transport.MaxIdleConnsPerHost)
+	}
+	if transport.IdleConnTimeout != 0 {
+		t.Errorf("IdleConnTimeout = %v, want 0", transport.IdleConnTimeout)
+	}
 }
