@@ -57,6 +57,23 @@ protects HTTP headers and provides certificate-based server identity.
 
 All other __N.B__ points of "Preparing the remote Windows machine for Basic authentication" also apply.
 
+### Preparing the remote Windows machine for CredSSP authentication
+CredSSP requires both WinRM and CredSSP to be enabled on the target host.
+
+On the remote host, run PowerShell as Administrator and execute:
+
+                winrm quickconfig
+                Enable-WSManCredSSP -Role Server -Force
+                winrm set winrm/config/service/Auth '@{CredSSP="true"}'
+
+CredSSP wraps the WinRM payload in its own TLS-encrypted channel, so there is no need to enable `AllowUnencrypted` for this transport.
+
+To allow the client machine to delegate credentials to this host, configure the client policy or run:
+
+                Enable-WSManCredSSP -Role Client -DelegateComputer "<server-or-pattern>" -Force
+
+All __N.B__ points of "Preparing the remote Windows machine for Basic authentication" also apply.
+
 
 ### Building the winrm go and executable
 
@@ -301,6 +318,49 @@ although message encryption can still be requested explicitly. Kerberos and
 NTLM use the WinRM SPNEGO encrypted-message content type; CredSSP is not yet
 available through the Kerberos encryption constructors. AES enctypes are
 preferred; RC4-HMAC is retained only for legacy interoperability.
+
+By passing a TransportDecorator it is also possible to use CredSSP authentication:
+
+```go
+package main
+
+import (
+  "context"
+  "os"
+
+  "github.com/masterzen/winrm"
+)
+
+endpoint := winrm.NewEndpoint("srv-win", 5985, false, true, nil, nil, nil, 0)
+
+params := winrm.DefaultParameters
+params.TransportDecorator = func() winrm.Transporter { return &winrm.ClientCredSSP{} }
+
+client, err := winrm.NewClientWithParameters(endpoint, "DOMAIN\\user", "s3cr3t", params)
+if err != nil {
+  panic(err)
+}
+
+ctx, cancel := context.WithCancel(context.Background())
+defer cancel()
+_, err = client.RunWithContext(ctx, "whoami", os.Stdout, os.Stderr)
+if err != nil {
+  panic(err)
+}
+```
+
+__N.B.:__ CredSSP binds authentication state and its TLS tunnel to a single connection, so all requests on a CredSSP client are serialized. Because a long-polling output `Receive` holds that lock until it returns, concurrent stdin sends are stalled behind each poll. Real-time interactive stdin is therefore not supported over CredSSP; non-interactive `RunCmd`/`RunPS` (no stdin) are unaffected. If the server drops the pinned connection, the client transparently re-runs the handshake once on the next request.
+
+### Running opt-in CredSSP integration tests
+The CredSSP live integration test is disabled by default and only compiled when using the `credssp_integration` build tag.
+
+```bash
+WINRM_CREDSSP_HOST=win-host WINRM_CREDSSP_PORT=5985 \
+WINRM_CREDSSP_USER='DOMAIN\\user' WINRM_CREDSSP_PASSWORD=... \
+go test -tags credssp_integration -run CredSSPIntegration -v ./...
+```
+
+If the required environment variables are unset, the test will be skipped.
 
 
 By passing a Dial in the Parameters struct it is possible to use different dialer (e.g. tunnel through SSH)
