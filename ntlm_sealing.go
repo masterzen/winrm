@@ -44,12 +44,14 @@ func deriveServerSealKey(sessionKey []byte) []byte {
 // internal state advances with each call, so the same cipher must be reused in
 // order for every message in the session (MS-NLMP §3.4 CONNECTION mode).
 // seqNum is the zero-based sequence number of this message and must increment by
-// one for every message sealed with this cipher.
-func sealMessage(cipher *rc4.Cipher, signKey []byte, seqNum uint32, plaintext []byte) (ciphertext, signature []byte) {
+// one for every message sealed with this cipher. keyExch must be true only when
+// the server's CHALLENGE_MESSAGE granted NTLMSSP_NEGOTIATE_KEY_EXCH (MS-NLMP
+// §3.4.4.2); see ntlmSign.
+func sealMessage(cipher *rc4.Cipher, signKey []byte, seqNum uint32, plaintext []byte, keyExch bool) (ciphertext, signature []byte) {
 	seq := ntlmSeqBytes(seqNum)
 	ciphertext = make([]byte, len(plaintext))
 	cipher.XORKeyStream(ciphertext, plaintext)
-	signature = ntlmSign(cipher, signKey, seq, plaintext)
+	signature = ntlmSign(cipher, signKey, seq, plaintext, keyExch)
 	return ciphertext, signature
 }
 
@@ -57,14 +59,16 @@ func sealMessage(cipher *rc4.Cipher, signKey []byte, seqNum uint32, plaintext []
 // against signature (MS-NLMP §3.4.3, §3.4.4).
 //
 // cipher must be the caller's persistent sealing cipher for the sender, used in
-// CONNECTION mode (see sealMessage). returns an error if signature does not match.
-func unsealMessage(cipher *rc4.Cipher, signKey []byte, signature, ciphertext []byte) ([]byte, error) {
+// CONNECTION mode (see sealMessage). keyExch must match the value the sender
+// used to seal the message (see ntlmSign). returns an error if signature does
+// not match.
+func unsealMessage(cipher *rc4.Cipher, signKey []byte, signature, ciphertext []byte, keyExch bool) ([]byte, error) {
 	if len(signature) != 16 {
 		return nil, errors.New("ntlmssp: signature must be 16 bytes")
 	}
 	plaintext := make([]byte, len(ciphertext))
 	cipher.XORKeyStream(plaintext, ciphertext)
-	expected := ntlmSign(cipher, signKey, signature[12:16], plaintext)
+	expected := ntlmSign(cipher, signKey, signature[12:16], plaintext, keyExch)
 	if !hmac.Equal(signature, expected) {
 		return nil, errors.New("ntlmssp: signature mismatch")
 	}
@@ -81,9 +85,22 @@ func ntlmSeqBytes(seqNum uint32) []byte {
 	return []byte{byte(seqNum), byte(seqNum >> 8), byte(seqNum >> 16), byte(seqNum >> 24)}
 }
 
-func ntlmSign(sealCipher *rc4.Cipher, signKey []byte, seq []byte, plaintext []byte) []byte {
+// ntlmSign computes the NTLMSSP_MESSAGE_SIGNATURE checksum for plaintext
+// (MS-NLMP §3.4.4.2).
+//
+// keyExch selects whether the checksum is RC4-encrypted: MS-NLMP §3.4.4.2
+// requires this only when the server's CHALLENGE_MESSAGE granted
+// NTLMSSP_NEGOTIATE_KEY_EXCH. A server can grant NTLMSSP_NEGOTIATE_SEAL
+// without granting key exchange, so callers must not assume keyExch is
+// always true. When keyExch is false, the checksum is sent as-is and
+// sealCipher's stream is not advanced for it.
+func ntlmSign(sealCipher *rc4.Cipher, signKey []byte, seq []byte, plaintext []byte, keyExch bool) []byte {
+	checksum := ntlmHmacMd5(signKey, append(seq, plaintext...))[:8]
+	if !keyExch {
+		return append(append([]byte(ntlmVersionMagic), checksum...), seq...)
+	}
 	encHmac := make([]byte, 8)
-	sealCipher.XORKeyStream(encHmac, ntlmHmacMd5(signKey, append(seq, plaintext...))[:8])
+	sealCipher.XORKeyStream(encHmac, checksum)
 	return append(append([]byte(ntlmVersionMagic), encHmac...), seq...)
 }
 
