@@ -66,9 +66,6 @@ func (s *WinRMSuite) TestCredSSPCredentialsRoundTrip(c *C) {
 }
 
 func (s *WinRMSuite) TestCredSSPTrailerLengthTable(c *C) {
-	encryption, err := NewEncryption("credssp")
-	c.Assert(err, IsNil)
-
 	testCases := []struct {
 		name       string
 		messageLen int
@@ -76,6 +73,7 @@ func (s *WinRMSuite) TestCredSSPTrailerLengthTable(c *C) {
 		expected   int
 	}{
 		{name: "gcm", messageLen: 31, cipher: "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384", expected: 16},
+		{name: "chacha20", messageLen: 31, cipher: "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256", expected: 16},
 		{name: "rc4", messageLen: 31, cipher: "TLS_RSA_WITH_RC4_128_SHA", expected: 20},
 		{name: "3des", messageLen: 31, cipher: "TLS_RSA_WITH_3DES_EDE_CBC_SHA", expected: 25},
 		{name: "aes-cbc-sha256", messageLen: 31, cipher: "TLS_RSA_WITH_AES_128_CBC_SHA256", expected: 33},
@@ -83,22 +81,21 @@ func (s *WinRMSuite) TestCredSSPTrailerLengthTable(c *C) {
 	}
 
 	for _, tc := range testCases {
-		c.Assert(encryption.getCredSSPTrailerLength(tc.messageLen, tc.cipher), Equals, tc.expected, Commentf(tc.name))
+		c.Assert(getCredSSPTrailerLength(tc.messageLen, tc.cipher), Equals, tc.expected, Commentf(tc.name))
 	}
 }
 
+// TestCredSSPBuildDecryptRoundTrip is the single-record round trip: Wrap then
+// Unwrap on a short message (well within one TLS record) returns the
+// original plaintext.
 func (s *WinRMSuite) TestCredSSPBuildDecryptRoundTrip(c *C) {
 	clientConn, serverConn, err := newCredSSPTLSHarness()
 	c.Assert(err, IsNil)
 
-	encryption, err := NewEncryption("credssp")
-	c.Assert(err, IsNil)
-	encryption.tlsConn = clientConn.tlsConn
-	encryption.credsspConn = clientConn.memConn
-	encryption.timeout = 5 * time.Second
+	protector := &credsspMessageProtector{tlsConn: clientConn.tlsConn, conn: clientConn.memConn, timeout: 5 * time.Second}
 
 	request := []byte("create shell request")
-	wrappedRequest, err := encryption.buildCredSSPMessage(request, "host")
+	wrappedRequest, err := protector.Wrap(request)
 	c.Assert(err, IsNil)
 	c.Assert(len(wrappedRequest) > 4, Equals, true)
 
@@ -118,12 +115,12 @@ func (s *WinRMSuite) TestCredSSPBuildDecryptRoundTrip(c *C) {
 	serverCiphertext = serverConn.memConn.drainOutgoing(serverCiphertext)
 
 	cipherName := tls.CipherSuiteName(clientConn.tlsConn.ConnectionState().CipherSuite)
-	trailer := encryption.getCredSSPTrailerLength(len(response), cipherName)
+	trailer := getCredSSPTrailerLength(len(response), cipherName)
 	payload := make([]byte, 4+len(serverCiphertext))
 	binary.LittleEndian.PutUint32(payload[:4], uint32(trailer))
 	copy(payload[4:], serverCiphertext)
 
-	decrypted, err := encryption.decryptCredsspMessage(payload, "host", len(response))
+	decrypted, err := protector.Unwrap(payload, len(response))
 	c.Assert(err, IsNil)
 	c.Assert(decrypted, DeepEquals, response)
 }
@@ -219,11 +216,7 @@ func (s *WinRMSuite) TestCredSSPDecryptSpansMultipleRecords(c *C) {
 	clientConn, serverConn, err := newCredSSPTLSHarness()
 	c.Assert(err, IsNil)
 
-	encryption, err := NewEncryption("credssp")
-	c.Assert(err, IsNil)
-	encryption.tlsConn = clientConn.tlsConn
-	encryption.credsspConn = clientConn.memConn
-	encryption.timeout = 5 * time.Second
+	protector := &credsspMessageProtector{tlsConn: clientConn.tlsConn, conn: clientConn.memConn, timeout: 5 * time.Second}
 
 	// Larger than a single 16 KB TLS record to force multiple records.
 	response := bytes.Repeat([]byte("ABCDEFGH"), 5000)
@@ -235,12 +228,12 @@ func (s *WinRMSuite) TestCredSSPDecryptSpansMultipleRecords(c *C) {
 	sealed := serverConn.memConn.drainOutgoing(sealedFirst)
 
 	cipherName := tls.CipherSuiteName(clientConn.tlsConn.ConnectionState().CipherSuite)
-	trailer := encryption.getCredSSPTrailerLength(len(response), cipherName)
+	trailer := getCredSSPTrailerLength(len(response), cipherName)
 	payload := make([]byte, 4+len(sealed))
 	binary.LittleEndian.PutUint32(payload[:4], uint32(trailer))
 	copy(payload[4:], sealed)
 
-	decrypted, err := encryption.decryptCredsspMessage(payload, "host", len(response))
+	decrypted, err := protector.Unwrap(payload, len(response))
 	c.Assert(err, IsNil)
 	c.Assert(decrypted, DeepEquals, response)
 }
@@ -251,11 +244,7 @@ func (s *WinRMSuite) TestCredSSPDecryptTamperedFails(c *C) {
 	clientConn, serverConn, err := newCredSSPTLSHarness()
 	c.Assert(err, IsNil)
 
-	encryption, err := NewEncryption("credssp")
-	c.Assert(err, IsNil)
-	encryption.tlsConn = clientConn.tlsConn
-	encryption.credsspConn = clientConn.memConn
-	encryption.timeout = 2 * time.Second
+	protector := &credsspMessageProtector{tlsConn: clientConn.tlsConn, conn: clientConn.memConn, timeout: 2 * time.Second}
 
 	response := []byte("sensitive data payload")
 	_, err = serverConn.tlsConn.Write(response)
@@ -269,12 +258,12 @@ func (s *WinRMSuite) TestCredSSPDecryptTamperedFails(c *C) {
 	sealed[len(sealed)-1] ^= 0xFF
 
 	cipherName := tls.CipherSuiteName(clientConn.tlsConn.ConnectionState().CipherSuite)
-	trailer := encryption.getCredSSPTrailerLength(len(response), cipherName)
+	trailer := getCredSSPTrailerLength(len(response), cipherName)
 	payload := make([]byte, 4+len(sealed))
 	binary.LittleEndian.PutUint32(payload[:4], uint32(trailer))
 	copy(payload[4:], sealed)
 
-	_, err = encryption.decryptCredsspMessage(payload, "host", len(response))
+	_, err = protector.Unwrap(payload, len(response))
 	c.Assert(err, NotNil)
 }
 
@@ -466,25 +455,25 @@ func (s *WinRMSuite) TestCredSSPReauthRequiredOn401(c *C) {
 	c.Assert(err, IsNil)
 	defer ts.Close()
 
-	encryption, err := NewEncryption("credssp")
+	protector := &credsspMessageProtector{tlsConn: clientConn.tlsConn, conn: clientConn.memConn, timeout: 5 * time.Second}
+	messageEncryption, err := newWinRMMessageEncryption("credssp", protector)
 	c.Assert(err, IsNil)
-	encryption.httpClient = &http.Client{}
-	encryption.tlsConn = clientConn.tlsConn
-	encryption.credsspConn = clientConn.memConn
-	encryption.timeout = 5 * time.Second
 
-	_, err = encryption.PrepareEncryptedRequest(&Client{}, ts.URL, []byte("<soap/>"))
+	client := &ClientCredSSP{
+		httpClient:        &http.Client{},
+		messageEncryption: messageEncryption,
+	}
+
+	_, err = client.sendEncryptedRequest(ts.URL, []byte("<soap/>"))
 	c.Assert(errors.Is(err, errCredSSPReauthRequired), Equals, true)
 }
 
 // TestCredSSPEncryptMessagePropagatesError ensures a tunnel failure during
 // message wrapping is returned instead of silently producing a malformed body.
 func (s *WinRMSuite) TestCredSSPEncryptMessagePropagatesError(c *C) {
-	encryption, err := NewEncryption("credssp")
-	c.Assert(err, IsNil)
-
-	// tlsConn/credsspConn are unset, so buildCredSSPMessage fails.
-	_, err = encryption.encryptMessage([]byte("payload"), "host")
+	// tlsConn/conn are unset, so Wrap fails.
+	protector := &credsspMessageProtector{}
+	_, err := protector.Wrap([]byte("payload"))
 	c.Assert(err, NotNil)
 }
 
@@ -512,11 +501,7 @@ func (s *WinRMSuite) TestCredSSPDecryptTimesOutOnTruncatedResponse(c *C) {
 	clientConn, serverConn, err := newCredSSPTLSHarness()
 	c.Assert(err, IsNil)
 
-	encryption, err := NewEncryption("credssp")
-	c.Assert(err, IsNil)
-	encryption.tlsConn = clientConn.tlsConn
-	encryption.credsspConn = clientConn.memConn
-	encryption.timeout = 200 * time.Millisecond
+	protector := &credsspMessageProtector{tlsConn: clientConn.tlsConn, conn: clientConn.memConn, timeout: 200 * time.Millisecond}
 
 	response := []byte("short")
 	_, err = serverConn.tlsConn.Write(response)
@@ -526,14 +511,14 @@ func (s *WinRMSuite) TestCredSSPDecryptTimesOutOnTruncatedResponse(c *C) {
 	sealed := serverConn.memConn.drainOutgoing(sealedFirst)
 
 	cipherName := tls.CipherSuiteName(clientConn.tlsConn.ConnectionState().CipherSuite)
-	trailer := encryption.getCredSSPTrailerLength(len(response), cipherName)
+	trailer := getCredSSPTrailerLength(len(response), cipherName)
 	payload := make([]byte, 4+len(sealed))
 	binary.LittleEndian.PutUint32(payload[:4], uint32(trailer))
 	copy(payload[4:], sealed)
 
 	start := time.Now()
 	// Declare more plaintext than was actually sent.
-	_, err = encryption.decryptCredsspMessage(payload, "host", len(response)+64)
+	_, err = protector.Unwrap(payload, len(response)+64)
 	c.Assert(err, NotNil)
 	c.Assert(time.Since(start) < 5*time.Second, Equals, true)
 }

@@ -41,17 +41,13 @@ func TestNewEncryptionProtocols(t *testing.T) {
 		t.Fatalf("Kerberos settings were not applied: %#v", configured.kerberos)
 	}
 
-	// CredSSP's authentication transport (ClientCredSSP, in credssp.go) landed
-	// alongside this merge: NewEncryption("credssp") is now a valid, minimal
-	// Encryption value that ClientCredSSP.Post populates (tlsConn/credsspConn/
-	// httpClient/timeout) and drives directly via PrepareEncryptedRequest,
-	// bypassing Post/Transport above -- see the Encryption struct's doc comment.
-	credssp, err := NewEncryption("credssp")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if credssp.protocol != "credssp" || string(credssp.protocolString) != "application/HTTP-CredSSP-session-encrypted" {
-		t.Fatalf("unexpected CredSSP transport: %#v", credssp)
+	// CredSSP has its own dedicated transport, ClientCredSSP (credssp.go),
+	// which builds a credsspMessageProtector directly from the TLS tunnel
+	// performCredSSPAuth establishes -- it never goes through Encryption.
+	// NewEncryption/NewEncryptionWithSettings only support "ntlm" and
+	// "kerberos".
+	if _, err := NewEncryption("credssp"); err == nil {
+		t.Fatal("expected NewEncryption(\"credssp\") to be rejected")
 	}
 }
 

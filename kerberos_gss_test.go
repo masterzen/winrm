@@ -196,7 +196,7 @@ func TestKerberosMessageProtectorWinRMFraming(t *testing.T) {
 	copy(response[4:4+responseHeaderLength], responseToken[:responseHeaderLength])
 	copy(response[4+responseHeaderLength:], responseToken[responseHeaderLength:])
 
-	plaintext, err := context.Unwrap(response)
+	plaintext, err := context.Unwrap(response, -1) // expectedLength is ignored: Kerberos is self-describing
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,7 +226,7 @@ func TestKerberosWrapRejectsTamperingAndBadSequence(t *testing.T) {
 	copy(framed[4:4+headerLength], valid[:headerLength])
 	copy(framed[4+headerLength:], valid[headerLength:])
 	context := &kerberosInitiatorContext{contextKey: key, receiveSeq: 4, established: true}
-	if _, err := context.Unwrap(framed); err == nil || !strings.Contains(err.Error(), "sequence mismatch") {
+	if _, err := context.Unwrap(framed, -1); err == nil || !strings.Contains(err.Error(), "sequence mismatch") {
 		t.Fatalf("unexpected sequence error: %v", err)
 	}
 }
@@ -250,7 +250,7 @@ func TestKerberosRC4WinRMWrapRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	contextPlaintext, err := context.Unwrap(contextResponse)
+	contextPlaintext, err := context.Unwrap(contextResponse, -1) // expectedLength is ignored: Kerberos is self-describing
 	if err != nil {
 		t.Fatal(err)
 	}

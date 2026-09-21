@@ -18,7 +18,7 @@ func (p *testMessageProtector) Wrap(message []byte) ([]byte, error) {
 	return append(append([]byte(nil), p.wrapPrefix...), message...), nil
 }
 
-func (p *testMessageProtector) Unwrap(message []byte) ([]byte, error) {
+func (p *testMessageProtector) Unwrap(message []byte, _ int) ([]byte, error) {
 	if p.unwrapErr != nil {
 		return nil, p.unwrapErr
 	}
@@ -77,6 +77,71 @@ func TestWinRMMessageEncryptionWireFormat(t *testing.T) {
 	}
 	if got := encryption.contentType(); got != `multipart/encrypted;protocol="application/HTTP-SPNEGO-session-encrypted";boundary="Encrypted Boundary"` {
 		t.Fatalf("unexpected content type %q", got)
+	}
+}
+
+func TestWinRMMessageEncryptionSplitsLargeMessages(t *testing.T) {
+	protector := &testMessageProtector{wrapPrefix: []byte("protected:")}
+	encryption, err := newWinRMMessageEncryption("ntlm", protector)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// MS-WSMV section 2.2.9.1 requires a message over 16384 bytes to
+	// split into multiple encrypted MIME parts. One byte past the
+	// threshold must produce exactly two parts.
+	plaintext := bytes.Repeat([]byte("A"), maxEncryptedPartSize+1)
+	encrypted, err := encryption.encrypt(plaintext)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if parts := bytes.Count(encrypted, []byte("\tContent-Type: application/octet-stream\r\n")); parts != 2 {
+		t.Fatalf("expected message split into 2 encrypted parts, got %d\n%q", parts, encrypted)
+	}
+
+	if got := encryption.contentType(); !strings.Contains(got, "multipart/x-multi-encrypted") {
+		t.Fatalf("expected multipart/x-multi-encrypted content type, got %q", got)
+	}
+
+	decrypted, err := encryption.decrypt(encrypted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(decrypted, plaintext) {
+		t.Fatalf("round trip mismatch: got %d bytes, want %d bytes", len(decrypted), len(plaintext))
+	}
+}
+
+func TestWinRMMessageEncryptionKeepsThresholdSizeAsSinglePart(t *testing.T) {
+	protector := &testMessageProtector{wrapPrefix: []byte("protected:")}
+	encryption, err := newWinRMMessageEncryption("ntlm", protector)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A message exactly at the 16384-byte threshold must stay in a
+	// single multipart/encrypted part.
+	plaintext := bytes.Repeat([]byte("A"), maxEncryptedPartSize)
+	encrypted, err := encryption.encrypt(plaintext)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if parts := bytes.Count(encrypted, []byte("\tContent-Type: application/octet-stream\r\n")); parts != 1 {
+		t.Fatalf("expected message to stay in 1 encrypted part, got %d\n%q", parts, encrypted)
+	}
+
+	if got := encryption.contentType(); !strings.HasPrefix(got, "multipart/encrypted;") {
+		t.Fatalf("expected multipart/encrypted content type, got %q", got)
+	}
+
+	decrypted, err := encryption.decrypt(encrypted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(decrypted, plaintext) {
+		t.Fatalf("round trip mismatch: got %d bytes, want %d bytes", len(decrypted), len(plaintext))
 	}
 }
 

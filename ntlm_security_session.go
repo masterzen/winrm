@@ -247,7 +247,10 @@ func (p azureNTLMMessageProtector) Wrap(message []byte) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func (p azureNTLMMessageProtector) Unwrap(encryptedData []byte) ([]byte, error) {
+// Unwrap ignores expectedLength: NTLM's wire format (a 4-byte signature-
+// length prefix followed by the signature and sealed data) is
+// self-describing, unlike CredSSP's TLS-tunnel protector.
+func (p azureNTLMMessageProtector) Unwrap(encryptedData []byte, _ int) ([]byte, error) {
 	if p.session == nil {
 		return nil, errors.New("ntlmssp: NTLM security session is not established")
 	}

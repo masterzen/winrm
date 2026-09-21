@@ -271,7 +271,10 @@ func (c *kerberosInitiatorContext) Wrap(message []byte) ([]byte, error) {
 	return result, nil
 }
 
-func (c *kerberosInitiatorContext) Unwrap(message []byte) ([]byte, error) {
+// Unwrap ignores expectedLength: the Kerberos wrap token carries its own
+// signature-length prefix and is self-describing, unlike CredSSP's
+// TLS-tunnel protector.
+func (c *kerberosInitiatorContext) Unwrap(message []byte, _ int) ([]byte, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if !c.established {

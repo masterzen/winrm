@@ -11,6 +11,12 @@ import (
 
 const (
 	mimeBoundary = "--Encrypted Boundary"
+
+	// maxEncryptedPartSize is the MS-WSMV section 2.2.9.1 threshold. A
+	// message body at or under this size uses a single encrypted MIME
+	// part. A larger body splits into multiple parts, each individually
+	// wrapped by the protector.
+	maxEncryptedPartSize = 16384
 )
 
 var (
@@ -21,9 +27,16 @@ var (
 // messageProtector owns the protocol-specific representation stored in the
 // application/octet-stream MIME part. Implementations must be stateful when
 // their security protocol uses message sequence numbers.
+//
+// Unwrap takes the MIME part's declared OriginalContent length in
+// expectedLength. NTLM and Kerberos protectors ignore it -- their wire
+// format is self-describing. CredSSP's protector needs it: its transport is
+// a TLS tunnel, and a single TLS Read returns at most one record's worth of
+// plaintext, so the protector must know up front how many bytes to read
+// across however many records the message spans.
 type messageProtector interface {
 	Wrap([]byte) ([]byte, error)
-	Unwrap([]byte) ([]byte, error)
+	Unwrap(data []byte, expectedLength int) ([]byte, error)
 }
 
 // winRMMessageEncryption implements the protocol-independent MIME framing in
@@ -31,6 +44,12 @@ type messageProtector interface {
 type winRMMessageEncryption struct {
 	protocolString []byte
 	protector      messageProtector
+
+	// multipart records whether the most recent encrypt call split the
+	// message into more than one encrypted MIME part. contentType reads
+	// this to report multipart/x-multi-encrypted instead of
+	// multipart/encrypted, matching the body encrypt just produced.
+	multipart bool
 }
 
 func newWinRMMessageEncryption(protocol string, protector messageProtector) (*winRMMessageEncryption, error) {
@@ -57,28 +76,56 @@ func newWinRMMessageEncryption(protocol string, protector messageProtector) (*wi
 }
 
 func (e *winRMMessageEncryption) contentType() string {
-	return fmt.Sprintf(`multipart/encrypted;protocol="%s";boundary="Encrypted Boundary"`, e.protocolString)
+	mediaType := "multipart/encrypted"
+	if e.multipart {
+		mediaType = "multipart/x-multi-encrypted"
+	}
+	return fmt.Sprintf(`%s;protocol="%s";boundary="Encrypted Boundary"`, mediaType, e.protocolString)
 }
 
 func (e *winRMMessageEncryption) encrypt(message []byte) ([]byte, error) {
-	encryptedStream, err := e.protector.Wrap(message)
-	if err != nil {
-		return nil, fmt.Errorf("wrap WinRM message: %w", err)
-	}
+	chunks := chunkEncryptedMessage(message, maxEncryptedPartSize)
+	e.multipart = len(chunks) > 1
 
 	var payload bytes.Buffer
-	payload.Grow(len(message) + len(encryptedStream) + 256)
-	payload.Write(mimeBoundaryBytes)
-	payload.WriteString("\r\n")
-	fmt.Fprintf(&payload, "\tContent-Type: %s\r\n", e.protocolString)
-	fmt.Fprintf(&payload, "\tOriginalContent: type=application/soap+xml;charset=UTF-8;Length=%d\r\n", len(message))
-	payload.Write(mimeBoundaryBytes)
-	payload.WriteString("\r\n")
-	payload.WriteString("\tContent-Type: application/octet-stream\r\n")
-	payload.Write(encryptedStream)
+	payload.Grow(len(message) + 256*len(chunks))
+	for _, chunk := range chunks {
+		encryptedStream, err := e.protector.Wrap(chunk)
+		if err != nil {
+			return nil, fmt.Errorf("wrap WinRM message: %w", err)
+		}
+
+		payload.Write(mimeBoundaryBytes)
+		payload.WriteString("\r\n")
+		fmt.Fprintf(&payload, "\tContent-Type: %s\r\n", e.protocolString)
+		fmt.Fprintf(&payload, "\tOriginalContent: type=application/soap+xml;charset=UTF-8;Length=%d\r\n", len(chunk))
+		payload.Write(mimeBoundaryBytes)
+		payload.WriteString("\r\n")
+		payload.WriteString("\tContent-Type: application/octet-stream\r\n")
+		payload.Write(encryptedStream)
+	}
 	payload.Write(mimeBoundaryBytes)
 	payload.WriteString("--\r\n")
 	return payload.Bytes(), nil
+}
+
+// chunkEncryptedMessage splits message into parts of at most size bytes, per
+// MS-WSMV section 2.2.9.1: a message over 16384 bytes uses multiple
+// encrypted MIME parts instead of one. A message at or under size, including
+// an empty message, always returns exactly one chunk.
+func chunkEncryptedMessage(message []byte, size int) [][]byte {
+	if len(message) <= size {
+		return [][]byte{message}
+	}
+	chunks := make([][]byte, 0, (len(message)+size-1)/size)
+	for offset := 0; offset < len(message); offset += size {
+		end := offset + size
+		if end > len(message) {
+			end = len(message)
+		}
+		chunks = append(chunks, message[offset:end])
+	}
+	return chunks
 }
 
 func (e *winRMMessageEncryption) decryptResponse(response *http.Response) ([]byte, error) {
@@ -130,7 +177,7 @@ func (e *winRMMessageEncryption) decrypt(body []byte) ([]byte, error) {
 			return nil, fmt.Errorf("encrypted MIME part %d is missing the octet-stream header", i/2)
 		}
 		encryptedData := payload[len(octetStreamHeader):]
-		decrypted, err := e.protector.Unwrap(encryptedData)
+		decrypted, err := e.protector.Unwrap(encryptedData, expectedLength)
 		if err != nil {
 			return nil, fmt.Errorf("unwrap encrypted MIME part %d: %w", i/2, err)
 		}

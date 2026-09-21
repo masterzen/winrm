@@ -254,11 +254,11 @@ type ClientCredSSP struct {
 	// means only the protocol floor (version 2) is enforced.
 	MinimumVersion int
 
-	httpClient *http.Client
-	endpoint   *Endpoint
-	memConn    *credSSPMemoryConn
-	tlsConn    *tls.Conn
-	encryption *Encryption
+	httpClient        *http.Client
+	endpoint          *Endpoint
+	memConn           *credSSPMemoryConn
+	tlsConn           *tls.Conn
+	messageEncryption *winRMMessageEncryption
 
 	handshakeComplete bool
 	// mu serializes all Post calls. CredSSP authentication state and the TLS
@@ -339,19 +339,53 @@ func (c *ClientCredSSP) post(client *Client, request *soap.SoapMessage) (string,
 		return "", err
 	}
 
-	if c.encryption == nil {
-		encryption, err := NewEncryption("credssp")
+	if c.messageEncryption == nil {
+		protector := &credsspMessageProtector{
+			tlsConn: c.tlsConn,
+			conn:    c.memConn,
+			timeout: credSSPTimeout(c.endpoint.Timeout),
+		}
+		messageEncryption, err := newWinRMMessageEncryption("credssp", protector)
 		if err != nil {
 			return "", err
 		}
-		encryption.httpClient = c.httpClient
-		encryption.tlsConn = c.tlsConn
-		encryption.credsspConn = c.memConn
-		encryption.timeout = credSSPTimeout(c.endpoint.Timeout)
-		c.encryption = encryption
+		c.messageEncryption = messageEncryption
 	}
 
-	return c.encryption.PrepareEncryptedRequest(client, client.url, []byte(request.String()))
+	return c.sendEncryptedRequest(client.url, []byte(request.String()))
+}
+
+// sendEncryptedRequest seals request through c.messageEncryption's MIME
+// framing (message_encryption.go) and POSTs it, using the same connection
+// pinned by the CredSSP handshake. A 401 here means the server no longer
+// recognizes that connection as authenticated (typically re-dialed after the
+// pinned socket was dropped), so it is surfaced as errCredSSPReauthRequired
+// rather than a generic error, letting Post re-run the handshake once.
+func (c *ClientCredSSP) sendEncryptedRequest(endpoint string, message []byte) (string, error) {
+	encryptedMessage, err := c.messageEncryption.encrypt(message)
+	if err != nil {
+		return "", err
+	}
+
+	req, err := http.NewRequest("POST", endpoint, bytes.NewReader(encryptedMessage))
+	if err != nil {
+		return "", err
+	}
+	setWinRMHeaders(req, c.messageEncryption.contentType(), len(encryptedMessage))
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("send encrypted CredSSP request: %w", err)
+	}
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+		return "", errCredSSPReauthRequired
+	}
+
+	body, err := c.messageEncryption.decryptResponse(resp)
+	return string(body), err
 }
 
 func (c *ClientCredSSP) resetHandshakeState() {
@@ -361,7 +395,7 @@ func (c *ClientCredSSP) resetHandshakeState() {
 	c.handshakeComplete = false
 	c.memConn = nil
 	c.tlsConn = nil
-	c.encryption = nil
+	c.messageEncryption = nil
 }
 
 func (c *ClientCredSSP) ensureHandshake(client *Client) error {
