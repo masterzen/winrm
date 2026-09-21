@@ -319,4 +319,8 @@ func TestNegotiateResponseToken(t *testing.T) {
 	if err != nil || string(got) != string(want) {
 		t.Fatalf("Kerberos scheme: got %x, error %v", got, err)
 	}
+	got, err = negotiateResponseToken([]string{"NTLM " + base64.StdEncoding.EncodeToString(want)})
+	if err != nil || string(got) != string(want) {
+		t.Fatalf("NTLM scheme: got %x, error %v", got, err)
+	}
 }

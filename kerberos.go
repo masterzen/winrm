@@ -39,6 +39,11 @@ type Settings struct {
 	KrbCCache            string
 	WinRMUseNTLM         bool
 	WinRMPassCredentials bool
+	// NTLMKeyExchangeOptions controls the minimum NTLM key strength
+	// NewEncryptionWithSettings("ntlm", ...) will accept. The zero value
+	// accepts whatever the server negotiates, matching bodgit/ntlmssp's
+	// historical default, so existing callers are unaffected.
+	NTLMKeyExchangeOptions NTLMKeyExchangeOptions
 }
 
 type ClientKerberos struct {
@@ -280,7 +285,10 @@ func negotiateResponseToken(headers []string) ([]byte, error) {
 	for _, header := range headers {
 		for _, challenge := range strings.Split(header, ",") {
 			fields := strings.Fields(strings.TrimSpace(challenge))
-			if len(fields) != 2 || (!strings.EqualFold(fields[0], "Negotiate") && !strings.EqualFold(fields[0], "Kerberos")) {
+			if len(fields) != 2 ||
+				(!strings.EqualFold(fields[0], "Negotiate") &&
+					!strings.EqualFold(fields[0], "Kerberos") &&
+					!strings.EqualFold(fields[0], "NTLM")) {
 				continue
 			}
 			token, err := base64.StdEncoding.DecodeString(fields[1])
@@ -290,7 +298,7 @@ func negotiateResponseToken(headers []string) ([]byte, error) {
 			return token, nil
 		}
 	}
-	return nil, errors.New("kerberos negotiation response did not include a Negotiate or Kerberos token")
+	return nil, errors.New("negotiation response did not include a Negotiate, Kerberos, or NTLM token")
 }
 
 func readKerberosSOAPResponse(resp *http.Response) (string, error) {

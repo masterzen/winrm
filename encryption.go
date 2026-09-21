@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -12,10 +13,9 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/bodgit/ntlmssp"
-	ntlmhttp "github.com/bodgit/ntlmssp/http"
 	"github.com/masterzen/winrm/soap"
 )
 
@@ -23,13 +23,23 @@ import (
 // split into multiple encrypted MIME parts, each independently sealed.
 const sixTenKB = 16384
 
-// Encryption is a WinRM message-encryption transport selected by protocol.
-// NTLM uses the legacy transport in this type; Kerberos delegates to
-// ClientKerberos, which owns the Kerberos security context. CredSSP's
-// ongoing message encryption is genuine TLS application data (not an
-// NTLM-style Wrap/Unwrap), driven directly through tlsConn/credsspConn --
-// NTLM-style sealing is only used for CredSSP's pubKeyAuth handshake step,
-// a separate code path in credssp.go.
+// errNTLMReauthRequired signals that the server rejected an encrypted NTLM
+// request as unauthenticated (HTTP 401), typically because the connection
+// that carried the NTLM authentication state was dropped and re-dialed. It
+// triggers a one-shot re-handshake, mirroring errCredSSPReauthRequired
+// (credssp.go).
+var errNTLMReauthRequired = errors.New("NTLM re-authentication required")
+
+// Encryption is a WinRM message-encryption transport selected by protocol
+// (MS-WSMV §2.2.9.1). NTLM negotiates an azureNTLMSecuritySession (MS-NLMP
+// §3.4, ntlm_security_session.go) directly over HTTP and wraps/unwraps
+// message bodies through the shared messageProtector-based MIME framing in
+// message_encryption.go. Kerberos delegates entirely to ClientKerberos,
+// which owns the Kerberos security context. CredSSP's ongoing message
+// encryption is genuine TLS application data (not an NTLM-style
+// Wrap/Unwrap), driven directly through tlsConn/credsspConn -- NTLM-style
+// sealing is only used for CredSSP's pubKeyAuth handshake step, a separate
+// code path in credssp.go.
 type Encryption struct {
 	ntlm              *ClientNTLM
 	kerberos          *ClientKerberos
@@ -37,9 +47,19 @@ type Encryption struct {
 	protocol          string
 	protocolString    []byte
 	httpClient        *http.Client
-	ntlmClient        *ntlmssp.Client
-	ntlmhttp          *ntlmhttp.Client
 	messageEncryption *winRMMessageEncryption
+
+	// mu serializes Post's NTLM negotiate/request/retry sequence. Different
+	// goroutines can call Post concurrently on the same Encryption; without
+	// this lock they can race on messageEncryption's sequence numbers and on
+	// winRMMessageEncryption.multipart.
+	mu sync.Mutex
+
+	// ntlmKeyExchangeOptions controls the minimum NTLM key strength accepted
+	// when establishing an azureNTLMSecuritySession. The zero value accepts
+	// whatever the server negotiates, matching bodgit/ntlmssp's historical
+	// default.
+	ntlmKeyExchangeOptions NTLMKeyExchangeOptions
 
 	// tlsConn/credsspConn/timeout are used only when protocol == "credssp".
 	// They are populated by ClientCredSSP (credssp.go) after its handshake
@@ -63,10 +83,15 @@ func NewEncryption(protocol string) (*Encryption, error) {
 func NewEncryptionWithSettings(protocol string, settings *Settings) (*Encryption, error) {
 	switch protocol {
 	case "ntlm":
+		var ntlmKeyExchangeOptions NTLMKeyExchangeOptions
+		if settings != nil {
+			ntlmKeyExchangeOptions = settings.NTLMKeyExchangeOptions
+		}
 		return &Encryption{
-			ntlm:           &ClientNTLM{},
-			protocol:       protocol,
-			protocolString: []byte("application/HTTP-SPNEGO-session-encrypted"),
+			ntlm:                   &ClientNTLM{},
+			protocol:               protocol,
+			protocolString:         []byte("application/HTTP-SPNEGO-session-encrypted"),
+			ntlmKeyExchangeOptions: ntlmKeyExchangeOptions,
 		}, nil
 	case "kerberos":
 		kerberos := &ClientKerberos{}
@@ -102,9 +127,13 @@ func (e *Encryption) Transport(endpoint *Endpoint) error {
 	if err := e.ntlm.Transport(endpoint); err != nil {
 		return err
 	}
-	// The Azure NTLM negotiator above is retained for the fallback request
-	// path. bodgit/ntlmssp performs its own handshake for encrypted messages
-	// and requires the underlying transport to remain a *http.Transport.
+	// e.ntlm's Negotiator-wrapped transport is retained only for the
+	// fallback, unencrypted request path (used when message-encryption
+	// negotiation itself fails, see Post below). e.raw is a second, plain
+	// *http.Transport dialed the same way; e.httpClient (built from it)
+	// drives the Azure-based NTLM negotiate/challenge/authenticate handshake
+	// and the already-sealed encrypted requests directly, via manual
+	// Authorization header handling rather than a RoundTripper middleware.
 	e.raw.dial = e.ntlm.dial
 	e.raw.proxyfunc = e.ntlm.proxyfunc
 	if err := e.raw.Transport(endpoint); err != nil {
@@ -125,20 +154,8 @@ func (e *Encryption) Post(client *Client, message *soap.SoapMessage) (string, er
 		return "", fmt.Errorf("NTLM encryption transport is not initialized")
 	}
 
-	userName, domain := splitNTLMUser(client.username)
-	var err error
-	e.ntlmClient, err = ntlmssp.NewClient(
-		ntlmssp.SetUserInfo(userName, client.password),
-		ntlmssp.SetDomain(domain),
-		ntlmssp.SetVersion(ntlmssp.DefaultVersion()),
-	)
-	if err != nil {
-		return "", fmt.Errorf("create NTLM client: %w", err)
-	}
-	e.ntlmhttp, err = ntlmhttp.NewClient(e.httpClient, e.ntlmClient)
-	if err != nil {
-		return "", fmt.Errorf("create NTLM HTTP client: %w", err)
-	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
 
 	if err := e.PrepareRequest(client, client.url); err != nil {
 		// Preserve the existing behavior: if message encryption negotiation is
@@ -146,36 +163,72 @@ func (e *Encryption) Post(client *Client, message *soap.SoapMessage) (string, er
 		return e.ntlm.Post(client, message)
 	}
 
-	e.messageEncryption, err = newWinRMMessageEncryption("ntlm", ntlmMessageProtector{client: e.ntlmClient})
-	if err != nil {
-		return "", err
+	body, err := e.PrepareEncryptedRequest(client, client.url, []byte(message.String()))
+	if err != nil && errors.Is(err, errNTLMReauthRequired) {
+		// The connection that held the NTLM authentication state was lost --
+		// for example the server closed an idle keep-alive connection and the
+		// transport dialed a fresh, unauthenticated socket. Re-run the NTLM
+		// handshake and retry once. A 401 is safe to retry because the server
+		// never processed the encrypted request.
+		if err := e.PrepareRequest(client, client.url); err != nil {
+			return "", err
+		}
+		body, err = e.PrepareEncryptedRequest(client, client.url, []byte(message.String()))
 	}
-	return e.PrepareEncryptedRequest(client, client.url, []byte(message.String()))
+	return body, err
 }
 
-func splitNTLMUser(user string) (name, domain string) {
-	if before, after, found := strings.Cut(user, "@"); found {
-		return before, after
-	}
-	if before, after, found := strings.Cut(user, "\\"); found {
-		return after, before
-	}
-	return user, ""
-}
-
-func (e *Encryption) PrepareRequest(_ *Client, endpoint string) error {
-	if e.ntlmhttp == nil {
+// PrepareRequest negotiates NTLM message encryption: it runs the NTLM
+// negotiate/challenge/authenticate exchange over endpoint (each leg sent as
+// an Authorization: Negotiate header, MS-NLMP §3.3.1), derives an
+// azureNTLMSecuritySession from the resulting exported session key
+// (MS-NLMP §3.4), and installs it as e.messageEncryption's protector.
+func (e *Encryption) PrepareRequest(client *Client, endpoint string) error {
+	if e.httpClient == nil {
 		return fmt.Errorf("NTLM HTTP client is not initialized")
 	}
-	req, err := http.NewRequestWithContext(context.Background(), "POST", endpoint, nil)
+
+	negotiateChallenge := func(negotiateToken []byte) ([]byte, error) {
+		req, err := http.NewRequestWithContext(context.Background(), "POST", endpoint, nil)
+		if err != nil {
+			return nil, err
+		}
+		setWinRMHeaders(req, "application/soap+xml;charset=UTF-8", 0)
+		req.Header.Set("Authorization", "Negotiate "+base64.StdEncoding.EncodeToString(negotiateToken))
+
+		resp, err := e.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("negotiate NTLM message encryption: %w", err)
+		}
+		defer resp.Body.Close()
+		if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+			return nil, fmt.Errorf("read NTLM challenge response: %w", err)
+		}
+		if resp.StatusCode != http.StatusUnauthorized {
+			return nil, fmt.Errorf("NTLM negotiation expected an HTTP 401 challenge, got %d", resp.StatusCode)
+		}
+		challengeToken, err := negotiateResponseToken(resp.Header.Values("WWW-Authenticate"))
+		if err != nil {
+			return nil, fmt.Errorf("read NTLM challenge: %w", err)
+		}
+		return challengeToken, nil
+	}
+
+	authenticateToken, sessionKey, negotiateFlags, err := negotiateAzureNTLMSessionKey(client.username, client.password, negotiateChallenge)
+	if err != nil {
+		return fmt.Errorf("negotiate NTLM message encryption: %w", err)
+	}
+
+	authReq, err := http.NewRequestWithContext(context.Background(), "POST", endpoint, nil)
 	if err != nil {
 		return err
 	}
-	setWinRMHeaders(req, "application/soap+xml;charset=UTF-8", 0)
+	setWinRMHeaders(authReq, "application/soap+xml;charset=UTF-8", 0)
+	authReq.Header.Set("Authorization", "Negotiate "+base64.StdEncoding.EncodeToString(authenticateToken))
 
-	resp, err := e.ntlmhttp.Do(req)
+	resp, err := e.httpClient.Do(authReq)
 	if err != nil {
-		return fmt.Errorf("negotiate NTLM message encryption: %w", err)
+		return fmt.Errorf("complete NTLM message encryption negotiation: %w", err)
 	}
 	defer resp.Body.Close()
 	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
@@ -183,6 +236,15 @@ func (e *Encryption) PrepareRequest(_ *Client, endpoint string) error {
 	}
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("NTLM negotiation returned HTTP %d", resp.StatusCode)
+	}
+
+	azureSession, err := newAzureNTLMSecuritySession(sessionKey, negotiateFlags, true, e.ntlmKeyExchangeOptions)
+	if err != nil {
+		return fmt.Errorf("establish NTLM security session: %w", err)
+	}
+	e.messageEncryption, err = newWinRMMessageEncryption("ntlm", azureNTLMMessageProtector{session: azureSession})
+	if err != nil {
+		return err
 	}
 	return nil
 }
@@ -195,7 +257,7 @@ func (e *Encryption) PrepareEncryptedRequest(_ *Client, endpoint string, message
 		return e.prepareCredSSPEncryptedRequest(endpoint, message)
 	}
 
-	if e.messageEncryption == nil || e.ntlmhttp == nil {
+	if e.messageEncryption == nil {
 		return "", fmt.Errorf("NTLM message encryption is not initialized")
 	}
 	encryptedMessage, err := e.messageEncryption.encrypt(message)
@@ -208,18 +270,35 @@ func (e *Encryption) PrepareEncryptedRequest(_ *Client, endpoint string, message
 	}
 	setWinRMHeaders(req, e.messageEncryption.contentType(), len(encryptedMessage))
 
-	resp, err := e.ntlmhttp.Do(req)
+	// The NTLM authentication state (established by PrepareRequest above)
+	// lives on the underlying TCP connection, not in any per-request header,
+	// so this and subsequent encrypted requests are sent unauthenticated on
+	// e.httpClient and rely on connection reuse to stay on that connection.
+	resp, err := e.httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("send encrypted NTLM request: %w", err)
 	}
+
+	// A 401 here means the NTLM authentication state tied to this connection
+	// was lost, not that the encrypted message was rejected. Report it as a
+	// reauthentication condition instead of falling through to
+	// ParseEncryptedResponse, which would otherwise return the 401 error page
+	// as if it were the decrypted SOAP response.
+	if resp.StatusCode == http.StatusUnauthorized {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+		return "", errNTLMReauthRequired
+	}
+
 	body, err := e.ParseEncryptedResponse(resp)
 	return string(body), err
 }
 
 // prepareCredSSPEncryptedRequest builds and sends a CredSSP-encrypted WinRM
 // request. Ported from PR #188's original Encryption.PrepareEncryptedRequest,
-// scoped to the "credssp" protocol only (the "ntlm" case above is #191's
-// unmodified messageProtector-based path).
+// scoped to the "credssp" protocol only (the "ntlm" case above uses the
+// Azure-based azureNTLMMessageProtector through the same messageProtector
+// path; CredSSP will join it in a subsequent commit).
 func (e *Encryption) prepareCredSSPEncryptedRequest(endpoint string, message []byte) (string, error) {
 	if e.httpClient == nil {
 		return "", fmt.Errorf("CredSSP encryption transport is not initialized")
@@ -311,50 +390,14 @@ func (e *Encryption) ParseEncryptedResponse(response *http.Response) ([]byte, er
 	return io.ReadAll(response.Body)
 }
 
-type ntlmMessageProtector struct {
-	client *ntlmssp.Client
-}
-
-func (p ntlmMessageProtector) Wrap(message []byte) ([]byte, error) {
-	if p.client == nil || p.client.SecuritySession() == nil {
-		return nil, fmt.Errorf("NTLM security session is not established")
-	}
-	sealed, signature, err := p.client.SecuritySession().Wrap(message)
-	if err != nil {
-		return nil, err
-	}
-	buf := bytes.NewBuffer(make([]byte, 0, 4+len(signature)+len(sealed)))
-	if err := binary.Write(buf, binary.LittleEndian, uint32(len(signature))); err != nil { //nolint:gosec // WinRM length fields are 32-bit and the buffer is bounded by memory.
-		return nil, err
-	}
-	buf.Write(signature)
-	buf.Write(sealed)
-	return buf.Bytes(), nil
-}
-
-func (p ntlmMessageProtector) Unwrap(encryptedData []byte) ([]byte, error) {
-	if p.client == nil || p.client.SecuritySession() == nil {
-		return nil, fmt.Errorf("NTLM security session is not established")
-	}
-	if len(encryptedData) < 4 {
-		return nil, fmt.Errorf("NTLM encrypted payload is shorter than its length prefix")
-	}
-	signatureLength := int(binary.LittleEndian.Uint32(encryptedData[:4]))
-	if signatureLength < 0 || signatureLength > len(encryptedData)-4 {
-		return nil, fmt.Errorf("invalid NTLM signature length %d for payload of %d bytes", signatureLength, len(encryptedData))
-	}
-	signature := encryptedData[4 : 4+signatureLength]
-	sealed := encryptedData[4+signatureLength:]
-	return p.client.SecuritySession().Unwrap(sealed, signature)
-}
-
 // The functions below implement CredSSP's post-handshake message encryption.
 // Ported from PR #188's original encryption.go as directly as reasonably
 // possible: #188's flat Encryption struct grew a case "credssp" branch and a
 // handful of protocol-specific helper methods alongside its NTLM ones, and
 // this merge keeps that same shape rather than routing CredSSP through
-// #191's messageProtector interface (that unification is a later, separate
-// refactor). CredSSP's message encryption is TLS, not NTLM sealing:
+// the shared messageProtector interface NTLM/Kerberos use (that unification
+// is a later, separate refactor). CredSSP's message encryption is TLS, not
+// NTLM sealing:
 // credSSPMemoryConn (credssp.go) is an in-memory net.Conn that lets
 // crypto/tls.Client/Server run a real TLS session whose wire bytes are
 // captured instead of sent over a socket, so buildCredSSPMessage/
@@ -390,9 +433,9 @@ func (e *Encryption) encryptMessage(message []byte, host string) ([]byte, error)
 
 // buildMessage dispatches to the protocol-specific sealing implementation.
 // Only "credssp" is handled here -- "ntlm"'s equivalent path lives in
-// ntlmMessageProtector.Wrap above (via messageEncryption), and "kerberos"
-// message encryption is handled entirely by ClientKerberos, never reaching
-// this type.
+// azureNTLMMessageProtector.Wrap (ntlm_security_session.go, via
+// messageEncryption), and "kerberos" message encryption is handled entirely
+// by ClientKerberos, never reaching this type.
 func (e *Encryption) buildMessage(message []byte, host string) ([]byte, error) {
 	switch e.protocol {
 	case "credssp":

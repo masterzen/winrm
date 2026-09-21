@@ -1,6 +1,7 @@
 package winrm
 
 import (
+	"bytes"
 	"crypto/rc4"
 	"encoding/binary"
 	"errors"
@@ -214,4 +215,50 @@ func negotiateAzureNTLMSessionKey(username, password string, negotiateChallenge 
 	}
 
 	return authenticateToken, exportedSessionKey, negotiateFlags, nil
+}
+
+// azureNTLMMessageProtector adapts azureNTLMSecuritySession to the
+// messageProtector interface used by message_encryption.go's MIME framing
+// (MS-WSMV §2.2.9.1).
+//
+// Wire format: 4-byte little-endian signature length, then the signature,
+// then the sealed data. This is the same length-prefixed encrypted-content
+// layout MS-WSMV §2.2.9.1 defines for the encrypted MIME part, shared with
+// Kerberos's RC4-HMAC messages (see unwrapKerberosRC4Message in
+// kerberos_gss.go).
+type azureNTLMMessageProtector struct {
+	session *azureNTLMSecuritySession
+}
+
+func (p azureNTLMMessageProtector) Wrap(message []byte) ([]byte, error) {
+	if p.session == nil {
+		return nil, errors.New("ntlmssp: NTLM security session is not established")
+	}
+	sealed, signature, err := p.session.Wrap(message)
+	if err != nil {
+		return nil, err
+	}
+	buf := bytes.NewBuffer(make([]byte, 0, 4+len(signature)+len(sealed)))
+	if err := binary.Write(buf, binary.LittleEndian, uint32(len(signature))); err != nil { //nolint:gosec // WinRM length fields are 32-bit and the buffer is bounded by memory.
+		return nil, err
+	}
+	buf.Write(signature)
+	buf.Write(sealed)
+	return buf.Bytes(), nil
+}
+
+func (p azureNTLMMessageProtector) Unwrap(encryptedData []byte) ([]byte, error) {
+	if p.session == nil {
+		return nil, errors.New("ntlmssp: NTLM security session is not established")
+	}
+	if len(encryptedData) < 4 {
+		return nil, errors.New("ntlmssp: NTLM encrypted payload is shorter than its length prefix")
+	}
+	signatureLength := int(binary.LittleEndian.Uint32(encryptedData[:4]))
+	if signatureLength < 0 || signatureLength > len(encryptedData)-4 {
+		return nil, fmt.Errorf("ntlmssp: invalid NTLM signature length %d for payload of %d bytes", signatureLength, len(encryptedData))
+	}
+	signature := encryptedData[4 : 4+signatureLength]
+	sealed := encryptedData[4+signatureLength:]
+	return p.session.Unwrap(sealed, signature)
 }

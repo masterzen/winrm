@@ -16,17 +16,20 @@ require (
 )
 
 require (
+	github.com/jcmturner/gofork v1.7.6
+	golang.org/x/crypto v0.24.0
+)
+
+require (
 	github.com/bodgit/windows v1.0.1 // indirect
 	github.com/go-logr/logr v1.4.1 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-uuid v1.0.3 // indirect
 	github.com/jcmturner/aescts/v2 v2.0.0 // indirect
 	github.com/jcmturner/dnsutils/v2 v2.0.0 // indirect
-	github.com/jcmturner/gofork v1.7.6 // indirect
 	github.com/jcmturner/goidentity/v6 v6.0.1 // indirect
 	github.com/jcmturner/rpc/v2 v2.0.3 // indirect
 	github.com/kr/text v0.1.0 // indirect
 	github.com/tidwall/transform v0.0.0-20201103190739-32f242e2dbde // indirect
-	golang.org/x/crypto v0.24.0 // indirect
 	golang.org/x/net v0.21.0 // indirect
 )
