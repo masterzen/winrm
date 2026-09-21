@@ -95,8 +95,8 @@ type azureNTLMSecuritySession struct {
 // newAzureNTLMSecuritySession derives NTLM sealing and signing keys from the
 // exported session key and the negotiated flags (MS-NLMP §3.4.5).
 //
-// Only 128-bit keys are supported. A weaker negotiated strength returns an
-// error, never a silently wrong key.
+// 128, 56, and 40-bit keys are all supported; set opts.MinimumKeyBits to
+// reject weaker ones.
 //
 // Extended session security is required.
 //
@@ -113,18 +113,15 @@ func newAzureNTLMSecuritySession(sessionKey []byte, negotiateFlags uint32, isCli
 	if err != nil {
 		return nil, err
 	}
-	if strength != ntlmKey128Bit {
-		return nil, fmt.Errorf("ntlmssp: %d-bit NTLM keys are not yet supported", int(strength))
-	}
 	if !opts.satisfiedBy(strength) {
 		return nil, fmt.Errorf("ntlmssp: negotiated %d-bit key is below the required minimum of %d bits", int(strength), opts.MinimumKeyBits)
 	}
 
-	clientSealCipher, err := rc4.NewCipher(deriveClientSealKey(sessionKey))
+	clientSealCipher, err := rc4.NewCipher(sealKeyForStrength(strength, sessionKey, ntlmClientToServerSealing))
 	if err != nil {
 		return nil, fmt.Errorf("ntlmssp: creating client seal cipher: %w", err)
 	}
-	serverSealCipher, err := rc4.NewCipher(deriveServerSealKey(sessionKey))
+	serverSealCipher, err := rc4.NewCipher(sealKeyForStrength(strength, sessionKey, ntlmServerToClientSealing))
 	if err != nil {
 		return nil, fmt.Errorf("ntlmssp: creating server seal cipher: %w", err)
 	}

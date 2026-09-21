@@ -263,24 +263,85 @@ func (s *WinRMSuite) TestClassifyNTLMKeyStrength(c *C) {
 	}
 }
 
-// TestAzureNTLMSecuritySessionRejectsWeakerStrengths is the temporary
-// commit-2 restriction test: negotiated flags granting only 56-bit (then
-// separately 40-bit) must currently error with the "not yet supported"
-// message, confirming the documented interim behavior is what's actually
-// implemented, not a silently wrong key derivation (test 9'). This test is
-// replaced by commit 6's real tests 9/10/11 once 56/40-bit support lands.
-func (s *WinRMSuite) TestAzureNTLMSecuritySessionRejectsWeakerStrengths(c *C) {
+// TestAzureNTLMSecuritySessionAcceptsWeakerStrengthsByDefault is the
+// compatibility regression test: NTLMKeyExchangeOptions{} zero value plus
+// negotiated flags granting only 56-bit (then separately 40-bit) must
+// succeed both times, matching bodgit/ntlmssp's historical
+// unconditional-accept default. This is the concrete "don't break existing
+// NTLM users" regression test (test 9).
+func (s *WinRMSuite) TestAzureNTLMSecuritySessionAcceptsWeakerStrengthsByDefault(c *C) {
 	sessionKey := make([]byte, 16)
 	_, err := rand.Read(sessionKey)
 	c.Assert(err, IsNil)
 
 	var flags56 uint32 = ntlmNegotiateExtendedSessionSecurity | ntlmNegotiate56
 	_, err = newAzureNTLMSecuritySession(sessionKey, flags56, true, NTLMKeyExchangeOptions{})
-	c.Assert(err, ErrorMatches, "ntlmssp: 56-bit NTLM keys are not yet supported")
+	c.Assert(err, IsNil)
 
 	var flags40 uint32 = ntlmNegotiateExtendedSessionSecurity
 	_, err = newAzureNTLMSecuritySession(sessionKey, flags40, true, NTLMKeyExchangeOptions{})
-	c.Assert(err, ErrorMatches, "ntlmssp: 40-bit NTLM keys are not yet supported")
+	c.Assert(err, IsNil)
+}
+
+// TestAzureNTLMSecuritySessionMinimumKeyBitsOptIn checks that
+// NTLMKeyExchangeOptions{MinimumKeyBits: 128} rejects a 56-bit negotiation
+// (opt-in strict mode), while the same flags with zero-value options succeed
+// (test 10).
+func (s *WinRMSuite) TestAzureNTLMSecuritySessionMinimumKeyBitsOptIn(c *C) {
+	sessionKey := make([]byte, 16)
+	_, err := rand.Read(sessionKey)
+	c.Assert(err, IsNil)
+
+	var flags56 uint32 = ntlmNegotiateExtendedSessionSecurity | ntlmNegotiate56
+
+	_, err = newAzureNTLMSecuritySession(sessionKey, flags56, true, NTLMKeyExchangeOptions{MinimumKeyBits: 128})
+	c.Assert(err, ErrorMatches, "ntlmssp: negotiated 56-bit key is below the required minimum of 128 bits")
+
+	_, err = newAzureNTLMSecuritySession(sessionKey, flags56, true, NTLMKeyExchangeOptions{})
+	c.Assert(err, IsNil)
+}
+
+// TestAzureNTLMSecuritySessionWrapUnwrapAcrossKeyStrengths is a table-driven
+// Wrap/Unwrap round trip across all three key strengths, confirming
+// sealKeyForStrength's truncation produces mutually-decryptable client/server
+// key pairs at each size — not just that keys differ, but that build/decrypt
+// actually works end to end at 56-bit and 40-bit too (test 11).
+func (s *WinRMSuite) TestAzureNTLMSecuritySessionWrapUnwrapAcrossKeyStrengths(c *C) {
+	tests := []struct {
+		name  string
+		flags uint32
+	}{
+		{
+			name:  "128-bit",
+			flags: ntlmNegotiateExtendedSessionSecurity | ntlmNegotiate128,
+		},
+		{
+			name:  "56-bit",
+			flags: ntlmNegotiateExtendedSessionSecurity | ntlmNegotiate56,
+		},
+		{
+			name:  "40-bit",
+			flags: ntlmNegotiateExtendedSessionSecurity,
+		},
+	}
+
+	for _, t := range tests {
+		sessionKey := make([]byte, 16)
+		_, err := rand.Read(sessionKey)
+		c.Assert(err, IsNil, Commentf("case %q", t.name))
+
+		client, err := newAzureNTLMSecuritySession(sessionKey, t.flags, true, NTLMKeyExchangeOptions{})
+		c.Assert(err, IsNil, Commentf("case %q", t.name))
+		server, err := newAzureNTLMSecuritySession(sessionKey, t.flags, false, NTLMKeyExchangeOptions{})
+		c.Assert(err, IsNil, Commentf("case %q", t.name))
+
+		ciphertext, signature, err := client.Wrap([]byte("hello winrm"))
+		c.Assert(err, IsNil, Commentf("case %q", t.name))
+
+		plaintext, err := server.Unwrap(ciphertext, signature)
+		c.Assert(err, IsNil, Commentf("case %q", t.name))
+		c.Assert(string(plaintext), Equals, "hello winrm", Commentf("case %q", t.name))
+	}
 }
 
 // TestAzureNTLMSecuritySessionRequiresExtendedSessionSecurity checks that

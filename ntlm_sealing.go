@@ -22,19 +22,9 @@ func deriveClientSignKey(sessionKey []byte) []byte {
 	return ntlmDerivedKey(sessionKey, ntlmClientToServerSigning)
 }
 
-// deriveClientSealKey derives the client-to-server sealing key from the exported session key (MS-NLMP §3.4.5.3).
-func deriveClientSealKey(sessionKey []byte) []byte {
-	return ntlmDerivedKey(sessionKey, ntlmClientToServerSealing)
-}
-
 // deriveServerSignKey derives the server-to-client signing key from the exported session key (MS-NLMP §3.4.5.2).
 func deriveServerSignKey(sessionKey []byte) []byte {
 	return ntlmDerivedKey(sessionKey, ntlmServerToClientSigning)
-}
-
-// deriveServerSealKey derives the server-to-client sealing key from the exported session key (MS-NLMP §3.4.5.3).
-func deriveServerSealKey(sessionKey []byte) []byte {
-	return ntlmDerivedKey(sessionKey, ntlmServerToClientSealing)
 }
 
 // sealMessage encrypts plaintext using the RC4 sealing cipher and computes the
@@ -73,6 +63,25 @@ func unsealMessage(cipher *rc4.Cipher, signKey []byte, signature, ciphertext []b
 		return nil, errors.New("ntlmssp: signature mismatch")
 	}
 	return plaintext, nil
+}
+
+// sealKeyForStrength derives the sealing key for the given negotiated key
+// strength (MS-NLMP §3.4.5.3): 128-bit hashes the full exported session key;
+// 56-bit and 40-bit hash a truncated prefix of it before the magic constant —
+// matching bodgit/ntlmssp's sealKey() exactly:
+//
+//	ExtendedSessionSecurity && Negotiate128 -> MD5(sessionKey || constant)
+//	ExtendedSessionSecurity && Negotiate56  -> MD5(sessionKey[:7] || constant)
+//	ExtendedSessionSecurity (neither flag)  -> MD5(sessionKey[:5] || constant)
+func sealKeyForStrength(strength ntlmKeyStrength, sessionKey []byte, magicConstant string) []byte {
+	switch strength {
+	case ntlmKey56Bit:
+		return ntlmDerivedKey(sessionKey[:7], magicConstant)
+	case ntlmKey40Bit:
+		return ntlmDerivedKey(sessionKey[:5], magicConstant)
+	default: // ntlmKey128Bit
+		return ntlmDerivedKey(sessionKey, magicConstant)
+	}
 }
 
 func ntlmDerivedKey(sessionKey []byte, magicConstant string) []byte {
