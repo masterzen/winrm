@@ -19,7 +19,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bodgit/ntlmssp"
 	"github.com/masterzen/winrm/soap"
 )
 
@@ -254,6 +253,12 @@ type ClientCredSSP struct {
 	// means only the protocol floor (version 2) is enforced.
 	MinimumVersion int
 
+	// NTLMKeyExchangeOptions controls the minimum accepted NTLM key strength
+	// for the pubKeyAuth exchange's inner NTLM security session. The zero
+	// value accepts whatever the server negotiates, matching the historical
+	// bodgit/ntlmssp default.
+	NTLMKeyExchangeOptions NTLMKeyExchangeOptions
+
 	httpClient        *http.Client
 	endpoint          *Endpoint
 	memConn           *credSSPMemoryConn
@@ -487,48 +492,44 @@ func (c *ClientCredSSP) tlsConfig() (*tls.Config, error) {
 
 func (c *ClientCredSSP) performCredSSPAuth(client *Client) error {
 	user, domain := splitUsername(client.username)
-	ntlmClient, err := ntlmssp.NewClient(
-		ntlmssp.SetUserInfo(user, client.password),
-		ntlmssp.SetDomain(domain),
-		ntlmssp.SetVersion(ntlmssp.DefaultVersion()),
-	)
+
+	// negotiateChallenge drives the negotiate/challenge leg of the inner NTLM
+	// exchange over CredSSP's TSRequest framing: send the NEGOTIATE token and
+	// return the server's CHALLENGE token. The server's negotiated CredSSP
+	// protocol version rides along on the same response, so it is captured
+	// here for use once the exchange returns.
+	var serverVersion int
+	negotiateChallenge := func(negotiateToken []byte) ([]byte, error) {
+		challengeResponse, err := c.sendTSRequest(client.url, tsRequest{
+			Version:    credSSPDefaultVersion,
+			NegoTokens: []negoDataItem{{NegoToken: negotiateToken}},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("credssp negotiate/challenge exchange: %w", err)
+		}
+		if err := credSSPResponseError(challengeResponse); err != nil {
+			return nil, err
+		}
+		if challengeResponse == nil || len(challengeResponse.NegoTokens) == 0 {
+			return nil, errors.New("credssp challenge response missing NTLM challenge")
+		}
+		serverVersion = challengeResponse.Version
+		return challengeResponse.NegoTokens[0].NegoToken, nil
+	}
+
+	authToken, sessionKey, negotiateFlags, err := negotiateAzureNTLMSessionKey(user, client.password, negotiateChallenge)
 	if err != nil {
 		return err
 	}
 
-	negoToken, err := ntlmClient.Authenticate(nil, nil)
-	if err != nil {
-		return err
-	}
-	challengeRequest := tsRequest{
-		Version:    credSSPDefaultVersion,
-		NegoTokens: []negoDataItem{{NegoToken: negoToken}},
-	}
-
-	challengeResponse, err := c.sendTSRequest(client.url, challengeRequest)
-	if err != nil {
-		return fmt.Errorf("credssp negotiate/challenge exchange: %w", err)
-	}
-	if err := credSSPResponseError(challengeResponse); err != nil {
-		return err
-	}
-	if challengeResponse == nil || len(challengeResponse.NegoTokens) == 0 {
-		return errors.New("credssp challenge response missing NTLM challenge")
-	}
-
-	version, err := negotiateCredSSPVersion(credSSPDefaultVersion, challengeResponse.Version, c.MinimumVersion)
+	version, err := negotiateCredSSPVersion(credSSPDefaultVersion, serverVersion, c.MinimumVersion)
 	if err != nil {
 		return err
 	}
 
-	authToken, err := ntlmClient.Authenticate(challengeResponse.NegoTokens[0].NegoToken, nil)
+	securitySession, err := newAzureNTLMSecuritySession(sessionKey, negotiateFlags, true, c.NTLMKeyExchangeOptions)
 	if err != nil {
 		return err
-	}
-
-	securitySession := ntlmClient.SecuritySession()
-	if securitySession == nil {
-		return errors.New("credssp ntlm security session not established")
 	}
 
 	if len(c.tlsConn.ConnectionState().PeerCertificates) == 0 {
@@ -668,7 +669,7 @@ func computePubKeyAuthPlaintext(version int, nonce, serverPublicKey []byte) (cli
 	return clientPlaintext, expectedServer
 }
 
-func buildPubKeyAuthData(session *ntlmssp.SecuritySession, serverPublicKey []byte, version int, nonce []byte) ([]byte, []byte, error) {
+func buildPubKeyAuthData(session credSSPSecurityContext, serverPublicKey []byte, version int, nonce []byte) ([]byte, []byte, error) {
 	clientPlaintext, expectedServer := computePubKeyAuthPlaintext(version, nonce, serverPublicKey)
 	wrapped, err := wrapCredSSPData(session, clientPlaintext)
 	if err != nil {

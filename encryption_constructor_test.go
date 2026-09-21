@@ -3,9 +3,6 @@ package winrm
 import (
 	"net/http"
 	"testing"
-
-	"github.com/bodgit/ntlmssp"
-	ntlmhttp "github.com/bodgit/ntlmssp/http"
 )
 
 func TestNewEncryptionProtocols(t *testing.T) {
@@ -51,6 +48,14 @@ func TestNewEncryptionProtocols(t *testing.T) {
 	}
 }
 
+// TestNTLMEncryptionUsesRawTransportForEncryptedClient guards that
+// encryption.httpClient is built on a plain, unwrapped *http.Transport
+// (e.raw.transport in encryption.go), not a RoundTripper middleware such as
+// ntlmssp.Negotiator. The Azure-based NTLM negotiate/challenge/authenticate
+// handshake and already-sealed requests are driven directly over
+// encryption.httpClient via manual Authorization header handling (see
+// negotiateAzureNTLMSessionKey), so a middleware-wrapped transport would
+// double-negotiate or otherwise interfere.
 func TestNTLMEncryptionUsesRawTransportForEncryptedClient(t *testing.T) {
 	encryption, err := NewEncryption("ntlm")
 	if err != nil {
@@ -62,13 +67,5 @@ func TestNTLMEncryptionUsesRawTransportForEncryptedClient(t *testing.T) {
 
 	if _, ok := encryption.httpClient.Transport.(*http.Transport); !ok {
 		t.Fatalf("encrypted NTLM transport is %T, want *http.Transport", encryption.httpClient.Transport)
-	}
-
-	ntlmClient, err := ntlmssp.NewClient(ntlmssp.SetUserInfo("user", "password"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := ntlmhttp.NewClient(encryption.httpClient, ntlmClient); err != nil {
-		t.Fatalf("create encrypted NTLM client: %v", err)
 	}
 }

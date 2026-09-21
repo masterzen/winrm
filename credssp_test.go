@@ -186,6 +186,44 @@ func (s *WinRMSuite) TestCredSSPUnwrapRejectsShortPayload(c *C) {
 	c.Assert(err, NotNil)
 }
 
+// TestCredSSPBuildPubKeyAuthDataWithAzureSession exercises buildPubKeyAuthData/
+// wrapCredSSPData/unwrapCredSSPData against a real azureNTLMSecuritySession
+// pair (not fakeSecurityContext), confirming credSSPSecurityContext's
+// Wrap/Unwrap shape is satisfied end-to-end and that a client/server pair
+// derived from the same session key can round-trip both directions of the
+// pubKeyAuth exchange.
+func (s *WinRMSuite) TestCredSSPBuildPubKeyAuthDataWithAzureSession(c *C) {
+	sessionKey := bytes.Repeat([]byte{0x2A}, 16)
+	var flags uint32 = ntlmNegotiateExtendedSessionSecurity | ntlmNegotiate128 | ntlmNegotiateSign | ntlmNegotiateSeal | ntlmNegotiateKeyExch
+
+	clientSession, err := newAzureNTLMSecuritySession(sessionKey, flags, true, NTLMKeyExchangeOptions{})
+	c.Assert(err, IsNil)
+	serverSession, err := newAzureNTLMSecuritySession(sessionKey, flags, false, NTLMKeyExchangeOptions{})
+	c.Assert(err, IsNil)
+
+	serverPublicKey := []byte{0x30, 0x82, 0x01, 0x0a, 0x02, 0x82, 0x01, 0x01, 0x00}
+	nonce := bytes.Repeat([]byte{0x07}, 32)
+
+	clientPubKeyAuth, expectedServerPlaintext, err := buildPubKeyAuthData(clientSession, serverPublicKey, credSSPDefaultVersion, nonce)
+	c.Assert(err, IsNil)
+
+	// The server unwraps the client's pubKeyAuth using its mirrored session
+	// (isClient=false) and must recover exactly what the client sent.
+	wantClientPlaintext, _ := computePubKeyAuthPlaintext(credSSPDefaultVersion, nonce, serverPublicKey)
+	gotClientPlaintext, err := unwrapCredSSPData(serverSession, clientPubKeyAuth)
+	c.Assert(err, IsNil)
+	c.Assert(gotClientPlaintext, DeepEquals, wantClientPlaintext)
+
+	// A real server would wrap its own pubKeyAuth reply (the value
+	// buildPubKeyAuthData tells the client to expect) with the mirrored
+	// key direction; confirm the client can unwrap it back correctly.
+	serverPubKeyAuth, err := wrapCredSSPData(serverSession, expectedServerPlaintext)
+	c.Assert(err, IsNil)
+	gotServerPlaintext, err := unwrapCredSSPData(clientSession, serverPubKeyAuth)
+	c.Assert(err, IsNil)
+	c.Assert(gotServerPlaintext, DeepEquals, expectedServerPlaintext)
+}
+
 // TestCredSSPPubKeyAuthDirection guards the v2-v4 vs v5+ pubKeyAuth direction:
 // pre-v5 the client sends the key unmodified and expects it back +1; v5+ uses
 // distinct directional SHA-256 binding hashes.
