@@ -31,4 +31,8 @@ test: deps
 	@printf "$(OK_COLOR)==> Testing...$(NO_COLOR)\n"
 	go test ./...
 
-.PHONY: all clean deps format test updatedeps
+gen-ntlm-fixtures:
+	@printf "$(OK_COLOR)==> Regenerating NTLM/bodgit interop fixtures$(NO_COLOR)\n"
+	./scripts/ntlm-bodgit-fixtures/generate.sh
+
+.PHONY: all clean deps format gen-ntlm-fixtures test updatedeps

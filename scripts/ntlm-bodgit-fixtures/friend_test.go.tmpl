@@ -1,0 +1,91 @@
+// friend_test.go.tmpl generates the golden vectors that prove this
+// package's NTLM sealing stays wire-compatible with bodgit/ntlmssp, the
+// library winrm used before migrating to Azure/go-ntlmssp. It seals each
+// fixture with bodgit's own real Wrap implementation so the vectors are
+// authoritative, not a reimplementation of bodgit's sealing formula.
+//
+// This file is never committed as a .go file and never built as part of
+// this module (see scripts/ntlm-bodgit-fixtures/README.md for why it ships
+// with a .tmpl extension). scripts/ntlm-bodgit-fixtures/generate.sh copies
+// it, renamed to friend_test.go, into a throwaway writable copy of
+// bodgit/ntlmssp fetched via `go mod download`, then runs it there with
+// `go test`. It is deleted along with that scratch copy when the script
+// exits.
+//
+// The session key and plaintext are fixed, so the golden vectors stay the
+// same across every run.
+package ntlmssp
+
+import (
+	"fmt"
+	"testing"
+)
+
+var (
+	friendSessionKey = []byte{
+		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+		0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+	}
+	friendPlaintext = []byte("The quick brown fox jumps over the lazy dog")
+)
+
+// friendFixtureSpec names one (key strength, KEY_EXCH state) combination to
+// seal with bodgit/ntlmssp's real SecuritySession.Wrap.
+type friendFixtureSpec struct {
+	name  string
+	bits  int
+	flags uint32
+}
+
+// TestGenerateWinrmInteropFixtures is the payload generate.sh runs to
+// produce winrm's golden vectors. It is not a real test of this package.
+func TestGenerateWinrmInteropFixtures(t *testing.T) {
+	base := ntlmsspNegotiateSign.Set(0)
+	base = ntlmsspNegotiateSeal.Set(base)
+	base = ntlmsspNegotiateExtendedSessionsecurity.Set(base)
+
+	specs := []friendFixtureSpec{
+		{"128-bit", 128, ntlmsspNegotiateKeyExch.Set(ntlmsspNegotiate128.Set(base))},
+		{"56-bit", 56, ntlmsspNegotiateKeyExch.Set(ntlmsspNegotiate56.Set(base))},
+		{"40-bit", 40, ntlmsspNegotiateKeyExch.Set(base)},
+		{"128-bit-no-keyexch", 128, ntlmsspNegotiate128.Set(base)},
+		{"56-bit-no-keyexch", 56, ntlmsspNegotiate56.Set(base)},
+		{"40-bit-no-keyexch", 40, base},
+	}
+
+	fmt.Println("// ntlm-bodgit-fixtures:generated:begin")
+	fmt.Println("var ntlmBodgitInteropFixtures = []ntlmBodgitInteropFixture{")
+	for _, spec := range specs {
+		sess, err := newSecuritySession(spec.flags, friendSessionKey, sourceClient)
+		if err != nil {
+			t.Fatalf("%s: newSecuritySession: %v", spec.name, err)
+		}
+		ciphertext, signature, err := sess.Wrap(friendPlaintext)
+		if err != nil {
+			t.Fatalf("%s: Wrap: %v", spec.name, err)
+		}
+
+		fmt.Println("\t{")
+		fmt.Printf("\t\tname:           %q,\n", spec.name)
+		fmt.Printf("\t\tnegotiateFlags: 0x%08x,\n", spec.flags)
+		fmt.Printf("\t\tbits:           %d,\n", spec.bits)
+		fmt.Printf("\t\tsessionKey:     %s,\n", friendByteLiteral(friendSessionKey))
+		fmt.Printf("\t\tplaintext:      []byte(%q),\n", string(friendPlaintext))
+		fmt.Printf("\t\tciphertext:     %s,\n", friendByteLiteral(ciphertext))
+		fmt.Printf("\t\tsignature:      %s,\n", friendByteLiteral(signature))
+		fmt.Println("\t},")
+	}
+	fmt.Println("}")
+	fmt.Println("// ntlm-bodgit-fixtures:generated:end")
+}
+
+func friendByteLiteral(b []byte) string {
+	s := "[]byte{"
+	for i, x := range b {
+		if i > 0 {
+			s += ", "
+		}
+		s += fmt.Sprintf("0x%02x", x)
+	}
+	return s + "}"
+}
