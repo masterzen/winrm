@@ -145,6 +145,30 @@ if err != nil {
 
 ```
 
+### Authentication and encryption transports
+
+Beyond the default unencrypted Basic-authentication transport shown above,
+this library supports three additional, related-but-distinct
+`TransportDecorator` options for authenticating and/or encrypting WinRM
+traffic:
+
+- **NTLM**, with an opt-in message-encryption mode that seals the WinRM SOAP
+  body (MS-NLMP), useful for workgroup or Azure-VM style hosts without a
+  domain controller.
+- **Kerberos**, for domain accounts, with its own opt-in message-encryption
+  mode that encrypts each SOAP message using the negotiated Kerberos security
+  context.
+- **CredSSP**, which delegates the client's credentials to the remote host
+  over a TLS tunnel -- needed for double-hop scenarios where the remote
+  command itself must authenticate onward using the caller's credentials --
+  and always encrypts traffic as part of that tunnel.
+
+All three are opt-in and layer on top of the same `TransportDecorator` (or,
+for message encryption, `NewEncryption`/`NewEncryptionWithSettings`)
+mechanism; none change the default transport's behavior for existing callers.
+
+#### NTLM
+
 By passing a TransportDecorator in the Parameters struct it is possible to use different Transports (e.g. NTLM)
 
 ```go
@@ -171,6 +195,50 @@ if err != nil {
 }
 
 ```
+
+##### NTLM message encryption
+
+For confidentiality without a domain controller, wrap the transport in
+`winrm.NewEncryption("ntlm")` instead of `&ClientNTLM{}`. This runs the same
+NTLM handshake but additionally seals each SOAP message using the negotiated
+NTLM session key (MS-NLMP §3.4):
+
+```go
+package main
+import (
+  "github.com/masterzen/winrm"
+  "os"
+)
+
+endpoint := winrm.NewEndpoint("localhost", 5985, false, false, nil, nil, nil, 0)
+
+encryption, err := winrm.NewEncryption("ntlm")
+if err != nil {
+	panic(err)
+}
+
+params := DefaultParameters
+params.TransportDecorator = func() Transporter { return encryption }
+
+client, err := NewClientWithParameters(endpoint, "test", "test", params)
+if err != nil {
+	panic(err)
+}
+
+_, err = client.RunWithInput("ipconfig", os.Stdout, os.Stderr, os.Stdin)
+if err != nil {
+	panic(err)
+}
+```
+
+Like the unencrypted `ClientNTLM` transport above, this is opt-in and does
+not change the default transport's behavior. By default it accepts whatever
+key strength (128, 56, or 40-bit) the server negotiates, matching this
+library's historical NTLM-encryption behavior; set
+`NewEncryptionWithSettings("ntlm", &Settings{NTLMKeyExchangeOptions:
+winrm.NTLMKeyExchangeOptions{MinimumKeyBits: 128}})` to reject weaker keys.
+
+#### Kerberos
 
 Passing a `TransportDecorator` also permits Kerberos authentication:
 
@@ -223,11 +291,14 @@ encrypts each SOAP request using the negotiated Kerberos enctype, and requires
 encrypted responses. Password and credential-cache authentication are both
 supported. Set `KrbCCache` instead of `Password` to use a cache.
 
-The protocol-selected encryption constructors accept `"ntlm"` and
-`"kerberos"`. For Kerberos, `NewEncryptionWithSettings` applies the same
-settings shown above and delegates authentication and message protection to
-`ClientKerberos`. CredSSP is intentionally not accepted until a CredSSP
-authentication transport is available.
+The protocol-selected encryption constructors, `NewEncryption` and
+`NewEncryptionWithSettings`, accept `"ntlm"` and `"kerberos"`. For Kerberos,
+`NewEncryptionWithSettings` applies the same settings shown above and
+delegates authentication and message protection to `ClientKerberos`. CredSSP
+is intentionally not one of the accepted protocol strings here -- it has its
+own dedicated transport, `ClientCredSSP` (see below), which always encrypts
+its traffic as part of its TLS tunnel rather than through this generic
+protocol switch.
 
 Kerberos message encryption supports AES128/AES256 SHA-1 and SHA-2 enctypes,
 and legacy RC4-HMAC. AES is strongly preferred. The export-strength RC4
@@ -315,9 +386,12 @@ Before troubleshooting WinRM, verify that:
 
 Message encryption is intended for HTTP. HTTPS already encrypts the transport,
 although message encryption can still be requested explicitly. Kerberos and
-NTLM use the WinRM SPNEGO encrypted-message content type; CredSSP is not yet
-available through the Kerberos encryption constructors. AES enctypes are
+NTLM use the WinRM SPNEGO encrypted-message content type; CredSSP encrypts
+its traffic through its own TLS tunnel instead (see below), not through the
+`NewEncryption`/`NewEncryptionWithSettings` constructors. AES enctypes are
 preferred; RC4-HMAC is retained only for legacy interoperability.
+
+#### CredSSP
 
 By passing a TransportDecorator it is also possible to use CredSSP authentication:
 
