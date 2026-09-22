@@ -8,8 +8,8 @@ the use of WinRM/WinRS.
 The library supports domain users through Kerberos, including WinRM message
 encryption over HTTP.
 
-[![Build Status](https://travis-ci.org/masterzen/winrm.svg?branch=master)](https://travis-ci.org/masterzen/winrm)
-[![Coverage Status](https://coveralls.io/repos/masterzen/winrm/badge.png)](https://coveralls.io/r/masterzen/winrm)
+[![Go Tests](https://github.com/masterzen/winrm/actions/workflows/go.yml/badge.svg)](https://github.com/masterzen/winrm/actions/workflows/go.yml)
+[![Lint](https://github.com/masterzen/winrm/actions/workflows/lint.yaml/badge.svg)](https://github.com/masterzen/winrm/actions/workflows/lint.yaml)
 
 ## Contact
 
