@@ -239,7 +239,7 @@ func (w *commandWriter) Write(data []byte) (int, error) {
 	origLen := len(data)
 	for len(data) > 0 {
 		// never send more data than our EnvelopeSize.
-		n := min(w.client.Parameters.EnvelopeSize-1000, len(data))
+		n := min(w.client.EnvelopeSize-1000, len(data))
 		if err := w.sendInput(data[:n], false); err != nil {
 			break
 		}

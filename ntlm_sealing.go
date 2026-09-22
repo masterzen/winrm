@@ -3,7 +3,7 @@ package winrm
 import (
 	"crypto/hmac"
 	"crypto/md5" //nolint:gosec
-	"crypto/rc4"
+	"crypto/rc4" //nolint:gosec // RC4 sealing is mandated by MS-NLMP §3.4 NTLM message confidentiality.
 	"errors"
 	"slices"
 )
@@ -91,7 +91,7 @@ func ntlmDerivedKey(sessionKey []byte, magicConstant string) []byte {
 }
 
 func ntlmSeqBytes(seqNum uint32) []byte {
-	return []byte{byte(seqNum), byte(seqNum >> 8), byte(seqNum >> 16), byte(seqNum >> 24)}
+	return []byte{byte(seqNum), byte(seqNum >> 8), byte(seqNum >> 16), byte(seqNum >> 24)} //nolint:gosec // little-endian byte extraction, not a truncating conversion.
 }
 
 // ntlmSign computes the NTLMSSP_MESSAGE_SIGNATURE checksum for plaintext
@@ -114,7 +114,7 @@ func ntlmSign(sealCipher *rc4.Cipher, signKey []byte, seq []byte, plaintext []by
 }
 
 func ntlmHmacMd5(key []byte, data ...[]byte) []byte {
-	h := hmac.New(md5.New, key) //nolint:gosec
+	h := hmac.New(md5.New, key)
 	for _, d := range data {
 		h.Write(d)
 	}

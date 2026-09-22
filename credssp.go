@@ -2,6 +2,7 @@ package winrm
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -40,8 +41,8 @@ const (
 	// being POSTed on its own.
 	credSSPHandshakeDrainSettle = 20 * time.Millisecond
 
-	credSSPClientBindingLabel = "CredSSP Client-To-Server Binding Hash\x00"
-	credSSPServerBindingLabel = "CredSSP Server-To-Client Binding Hash\x00"
+	credSSPClientBindingLabel = "CredSSP Client-To-Server Binding Hash\x00" //nolint:gosec // MS-CSSP channel binding label, not a credential.
+	credSSPServerBindingLabel = "CredSSP Server-To-Client Binding Hash\x00" //nolint:gosec // MS-CSSP channel binding label, not a credential.
 
 	// maxTSRequestLength bounds the declared length of a CredSSP TSRequest DER
 	// SEQUENCE. Real TSRequest/NegoToken messages are at most a few KB, so this
@@ -316,7 +317,7 @@ func (c *ClientCredSSP) Transport(endpoint *Endpoint) error {
 	// that same connection. Pin the transport to a single, long-lived keep-alive
 	// connection so http.Transport cannot silently open a fresh (unauthenticated)
 	// socket for a later request.
-	if transport, ok := c.clientRequest.transport.(*http.Transport); ok {
+	if transport, ok := c.transport.(*http.Transport); ok {
 		transport.DisableKeepAlives = false
 		transport.MaxConnsPerHost = 1
 		transport.MaxIdleConns = 1
@@ -324,7 +325,7 @@ func (c *ClientCredSSP) Transport(endpoint *Endpoint) error {
 		transport.IdleConnTimeout = 0
 	}
 
-	c.httpClient = &http.Client{Transport: c.clientRequest.transport}
+	c.httpClient = &http.Client{Transport: c.transport}
 	return nil
 }
 
@@ -378,7 +379,7 @@ func (c *ClientCredSSP) sendEncryptedRequest(endpoint string, message []byte) (s
 		return "", err
 	}
 
-	req, err := http.NewRequest("POST", endpoint, bytes.NewReader(encryptedMessage))
+	req, err := http.NewRequestWithContext(context.Background(), "POST", endpoint, bytes.NewReader(encryptedMessage))
 	if err != nil {
 		return "", err
 	}
@@ -424,7 +425,7 @@ func (c *ClientCredSSP) ensureHandshake(client *Client) error {
 
 	handshakeErr := make(chan error, 1)
 	go func() {
-		handshakeErr <- tlsConn.Handshake()
+		handshakeErr <- tlsConn.HandshakeContext(context.Background())
 	}()
 
 	for {
@@ -642,7 +643,7 @@ func negotiateCredSSPVersion(clientVersion, serverVersion, requiredMinimum int) 
 // policy denial, etc.) surface directly instead of as a vague downstream error.
 func credSSPResponseError(response *tsRequest) error {
 	if response != nil && response.ErrorCode != 0 {
-		return fmt.Errorf("credssp server returned error code 0x%08X", uint32(response.ErrorCode))
+		return fmt.Errorf("credssp server returned error code 0x%08X", uint32(response.ErrorCode)) //nolint:gosec // NTSTATUS codes are 32-bit; ErrorCode is int64 only because it is ASN.1 INTEGER.
 	}
 	return nil
 }
@@ -786,7 +787,7 @@ func readTSRequest(conn net.Conn, timeout time.Duration) (*tsRequest, error) {
 	if err := conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
 		return nil, err
 	}
-	defer conn.SetReadDeadline(time.Time{})
+	defer func() { _ = conn.SetReadDeadline(time.Time{}) }()
 
 	buffer := make([]byte, 0, 8192)
 	chunk := make([]byte, 4096)
@@ -840,7 +841,7 @@ func derSequenceComplete(buf []byte) (bool, int, error) {
 
 	contentLen := 0
 	for i := 0; i < numBytes; i++ {
-		contentLen = (contentLen << 8) | int(buf[2+i])
+		contentLen = (contentLen << 8) | int(buf[2+i]) //nolint:gosec // bounds checked above: len(buf) >= 2+numBytes.
 	}
 	total := 2 + numBytes + contentLen
 	if total > maxTSRequestLength {
@@ -850,7 +851,7 @@ func derSequenceComplete(buf []byte) (bool, int, error) {
 }
 
 func (c *ClientCredSSP) exchangeCredSSPToken(endpoint string, token []byte, requireToken bool) ([]byte, error) {
-	req, err := http.NewRequest("POST", endpoint, nil)
+	req, err := http.NewRequestWithContext(context.Background(), "POST", endpoint, nil)
 	if err != nil {
 		return nil, err
 	}

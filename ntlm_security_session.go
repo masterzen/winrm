@@ -2,7 +2,7 @@ package winrm
 
 import (
 	"bytes"
-	"crypto/rc4"
+	"crypto/rc4" //nolint:gosec // RC4 sealing is mandated by MS-NLMP §3.4 NTLM message confidentiality.
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -120,11 +120,11 @@ func newAzureNTLMSecuritySession(sessionKey []byte, negotiateFlags uint32, isCli
 		return nil, fmt.Errorf("ntlmssp: negotiated %d-bit key is below the required minimum of %d bits", int(strength), opts.MinimumKeyBits)
 	}
 
-	clientSealCipher, err := rc4.NewCipher(sealKeyForStrength(strength, sessionKey, ntlmClientToServerSealing))
+	clientSealCipher, err := rc4.NewCipher(sealKeyForStrength(strength, sessionKey, ntlmClientToServerSealing)) //nolint:gosec // RC4 sealing is mandated by MS-NLMP §3.4 NTLM message confidentiality.
 	if err != nil {
 		return nil, fmt.Errorf("ntlmssp: creating client seal cipher: %w", err)
 	}
-	serverSealCipher, err := rc4.NewCipher(sealKeyForStrength(strength, sessionKey, ntlmServerToClientSealing))
+	serverSealCipher, err := rc4.NewCipher(sealKeyForStrength(strength, sessionKey, ntlmServerToClientSealing)) //nolint:gosec // RC4 sealing is mandated by MS-NLMP §3.4 NTLM message confidentiality.
 	if err != nil {
 		return nil, fmt.Errorf("ntlmssp: creating server seal cipher: %w", err)
 	}

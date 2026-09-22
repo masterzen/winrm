@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"crypto/hmac"
 	"crypto/md5" //nolint:gosec
-	"crypto/rc4"
+	"crypto/rc4" //nolint:gosec // test-double NTLM server exercises the real RC4 sealing cipher (MS-NLMP §3.4).
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
@@ -15,7 +15,7 @@ import (
 	"testing"
 	"unicode/utf16"
 
-	"golang.org/x/crypto/md4" //nolint:staticcheck // NTLMv2 requires MD4 (MS-NLMP §3.3.1); only used here to build a test-double NTLM server.
+	"golang.org/x/crypto/md4" //nolint:gosec,staticcheck // NTLMv2 requires MD4 (MS-NLMP §3.3.1); only used here to build a test-double NTLM server.
 
 	"github.com/masterzen/winrm/soap"
 )
@@ -54,7 +54,7 @@ func ntlmTestHMACMD5(key []byte, data ...[]byte) []byte {
 
 // ntlmTestNTOWFv2 computes the NTLMv2 password hash (MS-NLMP §3.3.2).
 func ntlmTestNTOWFv2(password, username, domain string) []byte {
-	h := md4.New()
+	h := md4.New() //nolint:gosec // NTLMv2 requires MD4 (MS-NLMP §3.3.1); only used here to build a test-double NTLM server.
 	h.Write(ntlmTestToUnicode(password))
 	ntHash := h.Sum(nil)
 	return ntlmTestHMACMD5(ntHash, ntlmTestToUnicode(strings.ToUpper(username)+domain))
@@ -133,7 +133,7 @@ func ntlmTestParseAuthenticateMessage(data []byte) (ntChallengeResponse, encrypt
 			return nil, nil
 		}
 		end := int(f.offset) + int(f.length)
-		if f.offset > uint32(len(data)) || end > len(data) {
+		if f.offset > uint32(len(data)) || end > len(data) { //nolint:gosec // test NTLM messages are tiny; len(data) never approaches uint32 range.
 			return nil, fmt.Errorf("field extends beyond message buffer")
 		}
 		return data[f.offset:end], nil
@@ -161,7 +161,7 @@ func ntlmTestDeriveExportedSessionKey(t *testing.T, ntChallengeResponse, encrypt
 	ntProofStr := ntChallengeResponse[:16]
 	keyExchangeKey := ntlmTestHMACMD5(ntlmV2Hash, ntProofStr)
 
-	cipher, err := rc4.NewCipher(keyExchangeKey)
+	cipher, err := rc4.NewCipher(keyExchangeKey) //nolint:gosec // test-double NTLM server exercises the real RC4 sealing cipher (MS-NLMP §3.4).
 	if err != nil {
 		t.Fatalf("build RC4 cipher for KeyExchangeKey: %v", err)
 	}

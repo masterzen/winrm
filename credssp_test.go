@@ -2,6 +2,7 @@ package winrm
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
@@ -70,7 +71,7 @@ func (s *WinRMSuite) TestCredSSPTrailerLengthTable(c *C) {
 		name       string
 		messageLen int
 		cipher     string
-		expected   int
+		expected   uint32
 	}{
 		{name: "gcm", messageLen: 31, cipher: "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384", expected: 16},
 		{name: "chacha20", messageLen: 31, cipher: "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256", expected: 16},
@@ -117,7 +118,7 @@ func (s *WinRMSuite) TestCredSSPBuildDecryptRoundTrip(c *C) {
 	cipherName := tls.CipherSuiteName(clientConn.tlsConn.ConnectionState().CipherSuite)
 	trailer := getCredSSPTrailerLength(len(response), cipherName)
 	payload := make([]byte, 4+len(serverCiphertext))
-	binary.LittleEndian.PutUint32(payload[:4], uint32(trailer))
+	binary.LittleEndian.PutUint32(payload[:4], trailer)
 	copy(payload[4:], serverCiphertext)
 
 	decrypted, err := protector.Unwrap(payload, len(response))
@@ -268,7 +269,7 @@ func (s *WinRMSuite) TestCredSSPDecryptSpansMultipleRecords(c *C) {
 	cipherName := tls.CipherSuiteName(clientConn.tlsConn.ConnectionState().CipherSuite)
 	trailer := getCredSSPTrailerLength(len(response), cipherName)
 	payload := make([]byte, 4+len(sealed))
-	binary.LittleEndian.PutUint32(payload[:4], uint32(trailer))
+	binary.LittleEndian.PutUint32(payload[:4], trailer)
 	copy(payload[4:], sealed)
 
 	decrypted, err := protector.Unwrap(payload, len(response))
@@ -298,7 +299,7 @@ func (s *WinRMSuite) TestCredSSPDecryptTamperedFails(c *C) {
 	cipherName := tls.CipherSuiteName(clientConn.tlsConn.ConnectionState().CipherSuite)
 	trailer := getCredSSPTrailerLength(len(response), cipherName)
 	payload := make([]byte, 4+len(sealed))
-	binary.LittleEndian.PutUint32(payload[:4], uint32(trailer))
+	binary.LittleEndian.PutUint32(payload[:4], trailer)
 	copy(payload[4:], sealed)
 
 	_, err = protector.Unwrap(payload, len(response))
@@ -571,7 +572,7 @@ func (s *WinRMSuite) TestCredSSPDecryptTimesOutOnTruncatedResponse(c *C) {
 	cipherName := tls.CipherSuiteName(clientConn.tlsConn.ConnectionState().CipherSuite)
 	trailer := getCredSSPTrailerLength(len(response), cipherName)
 	payload := make([]byte, 4+len(sealed))
-	binary.LittleEndian.PutUint32(payload[:4], uint32(trailer))
+	binary.LittleEndian.PutUint32(payload[:4], trailer)
 	copy(payload[4:], sealed)
 
 	start := time.Now()
@@ -688,7 +689,7 @@ func newCredSSPTLSHarness() (*credSSPTLSEndpoint, *credSSPTLSEndpoint, error) {
 		MinVersion:         tls.VersionTLS12,
 		MaxVersion:         tls.VersionTLS12,
 	})
-	serverTLS := tls.Server(serverMem, &tls.Config{
+	serverTLS := tls.Server(serverMem, &tls.Config{ //nolint:gosec // test harness pins TLS 1.2 for deterministic record framing.
 		Certificates: []tls.Certificate{certificate},
 		MinVersion:   tls.VersionTLS12,
 		MaxVersion:   tls.VersionTLS12,
@@ -696,8 +697,8 @@ func newCredSSPTLSHarness() (*credSSPTLSEndpoint, *credSSPTLSEndpoint, error) {
 
 	clientErr := make(chan error, 1)
 	serverErr := make(chan error, 1)
-	go func() { clientErr <- clientTLS.Handshake() }()
-	go func() { serverErr <- serverTLS.Handshake() }()
+	go func() { clientErr <- clientTLS.HandshakeContext(context.Background()) }()
+	go func() { serverErr <- serverTLS.HandshakeContext(context.Background()) }()
 
 	if err := pumpCredSSPHandshake(clientMem, serverMem, clientErr, serverErr); err != nil {
 		return nil, nil, err

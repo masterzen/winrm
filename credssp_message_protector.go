@@ -41,7 +41,7 @@ func (p *credsspMessageProtector) Wrap(message []byte) ([]byte, error) {
 	trailerLength := getCredSSPTrailerLength(len(message), cipherSuite)
 
 	trailer := make([]byte, 4)
-	binary.LittleEndian.PutUint32(trailer, uint32(trailerLength)) //nolint:gosec // trailer length is bounded by a single TLS record's block/hash overhead.
+	binary.LittleEndian.PutUint32(trailer, trailerLength)
 
 	return append(trailer, sealedMessage...), nil
 }
@@ -67,7 +67,7 @@ func (p *credsspMessageProtector) Unwrap(encryptedData []byte, expectedLength in
 	}
 
 	_ = p.tlsConn.SetReadDeadline(time.Now().Add(credSSPTimeout(p.timeout)))
-	defer p.tlsConn.SetReadDeadline(time.Time{})
+	defer func() { _ = p.tlsConn.SetReadDeadline(time.Time{}) }()
 
 	// The plaintext length is authoritatively given by the MIME
 	// OriginalContent header (passed through by message_encryption.go's
@@ -84,8 +84,9 @@ func (p *credsspMessageProtector) Unwrap(encryptedData []byte, expectedLength in
 
 // getCredSSPTrailerLength computes the MS-CSSP trailer length (MAC/tag plus
 // any block-cipher padding) for a message of messageLength bytes under the
-// given TLS cipher suite name.
-func getCredSSPTrailerLength(messageLength int, cipherSuite string) int {
+// given TLS cipher suite name. Returns uint32 because the trailer length is
+// always written as a 4-byte wire field (MS-CSSP).
+func getCredSSPTrailerLength(messageLength int, cipherSuite string) uint32 {
 	var trailerLength int
 
 	if strings.Contains(cipherSuite, "_GCM_") || strings.Contains(cipherSuite, "-GCM-") {
@@ -136,5 +137,5 @@ func getCredSSPTrailerLength(messageLength int, cipherSuite string) int {
 
 		trailerLength = (prePadLength + paddingLength) - messageLength
 	}
-	return trailerLength
+	return uint32(trailerLength)
 }

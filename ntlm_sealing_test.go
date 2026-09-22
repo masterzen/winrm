@@ -2,7 +2,7 @@ package winrm
 
 import (
 	"crypto/rand"
-	"crypto/rc4"
+	"crypto/rc4" //nolint:gosec // RC4 sealing is mandated by MS-NLMP §3.4 NTLM message confidentiality.
 
 	"slices"
 
@@ -19,11 +19,11 @@ func (s *WinRMSuite) TestNTLMSealUnsealRoundTrip(c *C) {
 	_, err := rand.Read(sessionKey)
 	c.Assert(err, IsNil)
 
-	clientCipher, err := rc4.NewCipher(sealKeyForStrength(ntlmKey128Bit, sessionKey, ntlmClientToServerSealing))
+	clientCipher, err := rc4.NewCipher(sealKeyForStrength(ntlmKey128Bit, sessionKey, ntlmClientToServerSealing)) //nolint:gosec // RC4 sealing is mandated by MS-NLMP §3.4 NTLM message confidentiality.
 	c.Assert(err, IsNil)
 	clientSignKey := deriveClientSignKey(sessionKey)
 
-	serverCipher, err := rc4.NewCipher(sealKeyForStrength(ntlmKey128Bit, sessionKey, ntlmClientToServerSealing))
+	serverCipher, err := rc4.NewCipher(sealKeyForStrength(ntlmKey128Bit, sessionKey, ntlmClientToServerSealing)) //nolint:gosec // RC4 sealing is mandated by MS-NLMP §3.4 NTLM message confidentiality.
 	c.Assert(err, IsNil)
 
 	for seq, plaintext := range []string{"first message", "second message, same session"} {
@@ -45,7 +45,7 @@ func (s *WinRMSuite) TestNTLMUnsealDetectsTampering(c *C) {
 	signKey := deriveClientSignKey(sessionKey)
 
 	seal := func() (ciphertext, sig []byte) {
-		cipher, err := rc4.NewCipher(sealKeyForStrength(ntlmKey128Bit, sessionKey, ntlmClientToServerSealing))
+		cipher, err := rc4.NewCipher(sealKeyForStrength(ntlmKey128Bit, sessionKey, ntlmClientToServerSealing)) //nolint:gosec // RC4 sealing is mandated by MS-NLMP §3.4 NTLM message confidentiality.
 		c.Assert(err, IsNil)
 		return sealMessage(cipher, signKey, 0, []byte("hello winrm"), true)
 	}
@@ -53,7 +53,7 @@ func (s *WinRMSuite) TestNTLMUnsealDetectsTampering(c *C) {
 	ciphertext, sig := seal()
 	tamperedCiphertext := append([]byte(nil), ciphertext...)
 	tamperedCiphertext[0] ^= 0xFF
-	cipher, err := rc4.NewCipher(sealKeyForStrength(ntlmKey128Bit, sessionKey, ntlmClientToServerSealing))
+	cipher, err := rc4.NewCipher(sealKeyForStrength(ntlmKey128Bit, sessionKey, ntlmClientToServerSealing)) //nolint:gosec // RC4 sealing is mandated by MS-NLMP §3.4 NTLM message confidentiality.
 	c.Assert(err, IsNil)
 	_, err = unsealMessage(cipher, signKey, sig, tamperedCiphertext, true)
 	c.Assert(err, ErrorMatches, "ntlmssp: signature mismatch")
@@ -61,7 +61,7 @@ func (s *WinRMSuite) TestNTLMUnsealDetectsTampering(c *C) {
 	ciphertext, sig = seal()
 	tamperedSig := slices.Clone(sig)
 	tamperedSig[0] ^= 0xFF
-	cipher, err = rc4.NewCipher(sealKeyForStrength(ntlmKey128Bit, sessionKey, ntlmClientToServerSealing))
+	cipher, err = rc4.NewCipher(sealKeyForStrength(ntlmKey128Bit, sessionKey, ntlmClientToServerSealing)) //nolint:gosec // RC4 sealing is mandated by MS-NLMP §3.4 NTLM message confidentiality.
 	c.Assert(err, IsNil)
 	_, err = unsealMessage(cipher, signKey, tamperedSig, ciphertext, true)
 	c.Assert(err, ErrorMatches, "ntlmssp: signature mismatch")
@@ -77,11 +77,11 @@ func (s *WinRMSuite) TestNTLMSealUnsealRoundTripWithoutKeyExch(c *C) {
 	_, err := rand.Read(sessionKey)
 	c.Assert(err, IsNil)
 
-	clientCipher, err := rc4.NewCipher(sealKeyForStrength(ntlmKey128Bit, sessionKey, ntlmClientToServerSealing))
+	clientCipher, err := rc4.NewCipher(sealKeyForStrength(ntlmKey128Bit, sessionKey, ntlmClientToServerSealing)) //nolint:gosec // RC4 sealing is mandated by MS-NLMP §3.4 NTLM message confidentiality.
 	c.Assert(err, IsNil)
 	clientSignKey := deriveClientSignKey(sessionKey)
 
-	serverCipher, err := rc4.NewCipher(sealKeyForStrength(ntlmKey128Bit, sessionKey, ntlmClientToServerSealing))
+	serverCipher, err := rc4.NewCipher(sealKeyForStrength(ntlmKey128Bit, sessionKey, ntlmClientToServerSealing)) //nolint:gosec // RC4 sealing is mandated by MS-NLMP §3.4 NTLM message confidentiality.
 	c.Assert(err, IsNil)
 
 	ciphertext, sig := sealMessage(clientCipher, clientSignKey, 0, []byte("hello winrm"), false)
@@ -108,12 +108,12 @@ func (s *WinRMSuite) TestNTLMSignEncryptsChecksumOnlyWhenKeyExchGranted(c *C) {
 
 	plainChecksum := ntlmHmacMd5(signKey, append(append([]byte(nil), seq...), plaintext...))[:8]
 
-	noKeyExchCipher, err := rc4.NewCipher(sealKeyForStrength(ntlmKey128Bit, sessionKey, ntlmClientToServerSealing))
+	noKeyExchCipher, err := rc4.NewCipher(sealKeyForStrength(ntlmKey128Bit, sessionKey, ntlmClientToServerSealing)) //nolint:gosec // RC4 sealing is mandated by MS-NLMP §3.4 NTLM message confidentiality.
 	c.Assert(err, IsNil)
 	sigWithoutKeyExch := ntlmSign(noKeyExchCipher, signKey, seq, plaintext, false)
 	c.Assert(sigWithoutKeyExch[4:12], DeepEquals, plainChecksum)
 
-	keyExchCipher, err := rc4.NewCipher(sealKeyForStrength(ntlmKey128Bit, sessionKey, ntlmClientToServerSealing))
+	keyExchCipher, err := rc4.NewCipher(sealKeyForStrength(ntlmKey128Bit, sessionKey, ntlmClientToServerSealing)) //nolint:gosec // RC4 sealing is mandated by MS-NLMP §3.4 NTLM message confidentiality.
 	c.Assert(err, IsNil)
 	sigWithKeyExch := ntlmSign(keyExchCipher, signKey, seq, plaintext, true)
 	c.Assert(sigWithKeyExch[4:12], Not(DeepEquals), plainChecksum)

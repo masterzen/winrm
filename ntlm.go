@@ -21,14 +21,14 @@ func (c *ClientNTLM) Transport(endpoint *Endpoint) error {
 
 	// NTLM authentication uses one TCP connection. A second connection
 	// breaks the handshake.
-	if t, ok := c.clientRequest.transport.(*http.Transport); ok {
+	if t, ok := c.transport.(*http.Transport); ok {
 		t.DisableKeepAlives = false
 		t.MaxConnsPerHost = 1
 		t.MaxIdleConnsPerHost = 1
 		t.IdleConnTimeout = 0
 	}
 
-	c.clientRequest.transport = newNTLMSealingTransport(c.clientRequest.transport)
+	c.transport = newNTLMSealingTransport(c.transport)
 	return nil
 }
 

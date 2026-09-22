@@ -66,7 +66,9 @@ func (c *clientRequest) Transport(endpoint *Endpoint) error {
 			InsecureSkipVerify: endpoint.Insecure,
 			ServerName:         endpoint.TLSServerName,
 		},
-		Dial:                  dial,
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return dial(network, addr)
+		},
 		ResponseHeaderTimeout: endpoint.Timeout,
 	}
 
