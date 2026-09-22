@@ -23,13 +23,9 @@ clean:
 format:
 	go fmt ./...
 
-ci: deps
-	@printf "$(OK_COLOR)==> Testing with Coveralls...$(NO_COLOR)\n"
-	"$(CURDIR)/scripts/test.sh"
-
 test: deps
 	@printf "$(OK_COLOR)==> Testing...$(NO_COLOR)\n"
-	go test ./...
+	go test -race ./...
 
 gen-ntlm-fixtures:
 	@printf "$(OK_COLOR)==> Regenerating NTLM/bodgit interop fixtures$(NO_COLOR)\n"
