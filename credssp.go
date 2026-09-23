@@ -42,6 +42,12 @@ const (
 
 	credSSPClientBindingLabel = "CredSSP Client-To-Server Binding Hash\x00"
 	credSSPServerBindingLabel = "CredSSP Server-To-Client Binding Hash\x00"
+
+	// maxTSRequestLength bounds the declared length of a CredSSP TSRequest DER
+	// SEQUENCE. Real TSRequest/NegoToken messages are at most a few KB, so this
+	// ceiling is generous while still stopping a peer that declares a
+	// multi-gigabyte length from forcing readTSRequest to buffer that much data.
+	maxTSRequestLength = 4 * 1024 * 1024 // 4MiB
 )
 
 // credSSPTimeout returns a usable timeout, applying a sane floor when the
@@ -837,6 +843,9 @@ func derSequenceComplete(buf []byte) (bool, int, error) {
 		contentLen = (contentLen << 8) | int(buf[2+i])
 	}
 	total := 2 + numBytes + contentLen
+	if total > maxTSRequestLength {
+		return false, 0, fmt.Errorf("credssp TSRequest length %d exceeds maximum %d", total, maxTSRequestLength)
+	}
 	return len(buf) >= total, total, nil
 }
 

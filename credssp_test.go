@@ -454,6 +454,18 @@ func (s *WinRMSuite) TestDERSequenceComplete(c *C) {
 	c.Assert(err, NotNil)
 }
 
+// TestDERSequenceCompleteRejectsOversizedLength guards against a peer that
+// declares a huge SEQUENCE length to force readTSRequest to buffer an
+// excessive amount of data before failing.
+func (s *WinRMSuite) TestDERSequenceCompleteRejectsOversizedLength(c *C) {
+	// 0x30 0x84 0xFF 0xFF 0xFF 0xFF declares a SEQUENCE with a 4-byte length
+	// of 0xFFFFFFFF, well above maxTSRequestLength.
+	oversized := []byte{0x30, 0x84, 0xFF, 0xFF, 0xFF, 0xFF}
+	done, _, err := derSequenceComplete(oversized)
+	c.Assert(err, NotNil)
+	c.Assert(done, Equals, false)
+}
+
 // TestCredSSPTLSConfig guards the CA/ServerName handling.
 func (s *WinRMSuite) TestCredSSPTLSConfig(c *C) {
 	// Bad CA bytes surface an error instead of being swallowed.
