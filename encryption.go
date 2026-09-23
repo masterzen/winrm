@@ -108,13 +108,13 @@ func (e *Encryption) Transport(endpoint *Endpoint) error {
 	if err := e.ntlm.Transport(endpoint); err != nil {
 		return err
 	}
-	// e.ntlm's Negotiator-wrapped transport is retained only for the
-	// fallback, unencrypted request path (used when message-encryption
-	// negotiation itself fails, see Post below). e.raw is a second, plain
-	// *http.Transport dialed the same way; e.httpClient (built from it)
-	// drives the Azure-based NTLM negotiate/challenge/authenticate handshake
-	// and the already-sealed encrypted requests directly, via manual
-	// Authorization header handling rather than a RoundTripper middleware.
+	// e.ntlm's Transport call dials and configures the connection (proxy,
+	// TLS); e.raw.dial and e.raw.proxyfunc below reuse that same dial/proxy
+	// setup for e.raw, a second, plain *http.Transport. e.httpClient (built
+	// from e.raw) drives the Azure-based NTLM negotiate/challenge/
+	// authenticate handshake and the already-sealed encrypted requests
+	// directly, via manual Authorization header handling rather than a
+	// RoundTripper middleware.
 	e.raw.dial = e.ntlm.dial
 	e.raw.proxyfunc = e.ntlm.proxyfunc
 	if err := e.raw.Transport(endpoint); err != nil {
@@ -139,9 +139,7 @@ func (e *Encryption) Post(client *Client, message *soap.SoapMessage) (string, er
 	defer e.mu.Unlock()
 
 	if err := e.PrepareRequest(client, client.url); err != nil {
-		// Preserve the existing behavior: if message encryption negotiation is
-		// unavailable, make the request through the regular NTLM transport.
-		return e.ntlm.Post(client, message)
+		return "", err
 	}
 
 	body, err := e.PrepareEncryptedRequest(client, client.url, []byte(message.String()))
