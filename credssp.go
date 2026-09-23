@@ -476,9 +476,14 @@ func (c *ClientCredSSP) tlsConfig() (*tls.Config, error) {
 		}
 		cfg.RootCAs = certPool
 	} else if !c.endpoint.Insecure {
-		// Without a CA there is nothing to verify against; self-signed certs are
-		// normal for CredSSP, so skip verification.
-		cfg.InsecureSkipVerify = true
+		// A caller that leaves Insecure false but supplies no CACert still
+		// wants certificate checks, so verify against the system trust
+		// roots, matching the pattern in auth.go.
+		certPool, err := x509.SystemCertPool()
+		if err != nil {
+			return nil, err
+		}
+		cfg.RootCAs = certPool
 	}
 
 	// crypto/tls requires a ServerName (or InsecureSkipVerify) to verify a

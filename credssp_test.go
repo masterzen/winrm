@@ -473,9 +473,17 @@ func (s *WinRMSuite) TestCredSSPTLSConfig(c *C) {
 	c.Assert(cfg.ServerName, Equals, "winhost")
 	c.Assert(cfg.RootCAs, NotNil)
 
-	// No CA and not explicitly insecure -> nothing to verify, so skip.
+	// No CA and not explicitly insecure -> verify against system trust roots.
 	noCA := &ClientCredSSP{endpoint: &Endpoint{Host: "winhost", Insecure: false}}
 	cfg, err = noCA.tlsConfig()
+	c.Assert(err, IsNil)
+	c.Assert(cfg.InsecureSkipVerify, Equals, false)
+	c.Assert(cfg.ServerName, Equals, "winhost")
+	c.Assert(cfg.RootCAs, NotNil)
+
+	// Explicitly insecure -> skip verification regardless of CACert.
+	insecure := &ClientCredSSP{endpoint: &Endpoint{Host: "winhost", Insecure: true}}
+	cfg, err = insecure.tlsConfig()
 	c.Assert(err, IsNil)
 	c.Assert(cfg.InsecureSkipVerify, Equals, true)
 }
