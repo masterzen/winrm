@@ -62,6 +62,9 @@ type Encryption struct {
 // possible so the authentication configuration is installed before the
 // transport is initialized.
 func NewEncryption(protocol string) (*Encryption, error) {
+	if protocol == "kerberos" {
+		return nil, fmt.Errorf("kerberos encryption requires realm, SPN, and credentials; use NewEncryptionWithSettings instead")
+	}
 	return NewEncryptionWithSettings(protocol, nil)
 }
 

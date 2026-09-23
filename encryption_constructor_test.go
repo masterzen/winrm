@@ -14,12 +14,12 @@ func TestNewEncryptionProtocols(t *testing.T) {
 		t.Fatalf("unexpected NTLM transport: %#v", ntlm)
 	}
 
-	kerberos, err := NewEncryption("kerberos")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if kerberos.protocol != "kerberos" || kerberos.kerberos == nil {
-		t.Fatalf("unexpected Kerberos transport: %#v", kerberos)
+	// Kerberos needs realm, SPN, and credentials, which the settings-less
+	// NewEncryption path cannot supply. NewEncryption must reject it at
+	// construction time instead of returning a client that fails later
+	// with a confusing authentication error.
+	if _, err := NewEncryption("kerberos"); err == nil {
+		t.Fatal("expected NewEncryption(\"kerberos\") to be rejected")
 	}
 
 	configured, err := NewEncryptionWithSettings("kerberos", &Settings{
@@ -34,7 +34,7 @@ func TestNewEncryptionProtocols(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if configured.kerberos.Username != "user" || !configured.kerberos.MessageEncryption {
+	if configured.kerberos == nil || configured.kerberos.Username != "user" || !configured.kerberos.MessageEncryption {
 		t.Fatalf("Kerberos settings were not applied: %#v", configured.kerberos)
 	}
 
