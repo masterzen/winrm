@@ -1,8 +1,11 @@
 // friend_test.go.tmpl generates the golden vectors that prove this
-// package's NTLM sealing stays wire-compatible with bodgit/ntlmssp, the
-// library winrm used before migrating to Azure/go-ntlmssp. It seals each
-// fixture with bodgit's own real Wrap implementation so the vectors are
-// authoritative, not a reimplementation of bodgit's sealing formula.
+// package stays wire-compatible with bodgit/ntlmssp, the library winrm
+// used before migrating to Azure/go-ntlmssp: both NTLM sealing (sealed
+// with bodgit's own real Wrap implementation) and NTLMv2
+// challenge-response computation (derived with bodgit's own real
+// Client.Authenticate). Sealing each fixture with bodgit's real code,
+// rather than a reimplementation of its formulas, keeps the vectors
+// authoritative.
 //
 // This file is never committed as a .go file and never built as part of
 // this module (see scripts/ntlm-bodgit-fixtures/README.md for why it ships
@@ -12,8 +15,16 @@
 // `go test`. It is deleted along with that scratch copy when the script
 // exits.
 //
-// The session key and plaintext are fixed, so the golden vectors stay the
-// same across every run.
+// What the NtChallengeResponse fixtures prove, and what they deliberately
+// do not try to prove, is documented in
+// ntlm_security_session_interop_fixtures_test.go at the repo root -- read
+// that file's package doc comment first. In short: only NtChallengeResponse
+// is compared against real bodgit output. MIC bytes are never comparable
+// between the two libraries (different AUTHENTICATE_MESSAGE serialization),
+// and ExportedSessionKey isn't worth extracting here.
+//
+// All session keys, plaintexts, and challenge material below are fixed, so
+// the golden vectors stay the same across every run.
 package ntlmssp
 
 import (
@@ -88,4 +99,158 @@ func friendByteLiteral(b []byte) string {
 		s += fmt.Sprintf("0x%02x", x)
 	}
 	return s + "}"
+}
+
+// friendMicUsername and friendMicPassword must stay in sync, byte for byte,
+// with ntlmMicFixtureUsername/ntlmMicFixturePassword in
+// ntlm_mic_interop_test.go at the repo root. This glue file cannot import
+// the winrm package (it is compiled standalone inside a fetched copy of
+// bodgit/ntlmssp, in a different module), so the literals are duplicated by
+// hand.
+const (
+	friendMicUsername = "mic-fixture-user"
+	friendMicPassword = "mic-fixture-pass"
+)
+
+// friendMicSpec names one CHALLENGE_MESSAGE TargetInfo shape to feed to
+// bodgit/ntlmssp's real Client.Authenticate.
+type friendMicSpec struct {
+	name            string
+	serverChallenge [8]byte
+	clientChallenge []byte
+	timestamp       [8]byte
+	targetInfoFlags uint32 // pre-existing MsvAvFlags value; ignored unless includeFlags
+	includeFlags    bool
+}
+
+// friendMicBuildAVPair encodes one AV_PAIR (MS-NLMP §2.2.2.1): AvId(u16 LE),
+// AvLen(u16 LE), Value. Mirrors ntlm_mic_test.go's ntlmMicBuildAVPair on the
+// winrm side.
+func friendMicBuildAVPair(avID uint16, value []byte) []byte {
+	pair := []byte{byte(avID), byte(avID >> 8), byte(len(value)), byte(len(value) >> 8)}
+	return append(pair, value...)
+}
+
+// friendMicBuildTargetInfo hand-builds a minimal TargetInfo blob: always an
+// MsvAvTimestamp pair, optionally an MsvAvFlags pair, terminated by
+// MsvAvEOL. Mirrors ntlm_mic_test.go's ntlmMicBuildTargetInfo on the winrm
+// side (see that file for why this hand-built-bytes approach is used
+// instead of bodgit's own challengeMessage.Marshal -- it unconditionally
+// inserts an 8-byte Version block this codebase never negotiates).
+const (
+	friendMicAvIDMsvAvEOL       = 0
+	friendMicAvIDMsvAvFlags     = 6
+	friendMicAvIDMsvAvTimestamp = 7
+)
+
+func friendMicBuildTargetInfo(spec friendMicSpec) []byte {
+	var blob []byte
+	blob = append(blob, friendMicBuildAVPair(friendMicAvIDMsvAvTimestamp, spec.timestamp[:])...)
+	if spec.includeFlags {
+		v := []byte{
+			byte(spec.targetInfoFlags), byte(spec.targetInfoFlags >> 8),
+			byte(spec.targetInfoFlags >> 16), byte(spec.targetInfoFlags >> 24),
+		}
+		blob = append(blob, friendMicBuildAVPair(friendMicAvIDMsvAvFlags, v)...)
+	}
+	blob = append(blob, friendMicBuildAVPair(friendMicAvIDMsvAvEOL, nil)...)
+	return blob
+}
+
+// friendMicBuildChallenge hand-builds a raw CHALLENGE_MESSAGE (MS-NLMP
+// §2.2.1.2): 48-byte fixed header, no TargetName payload, TargetInfo payload
+// appended directly at byte offset 48. NegotiateFlags grant Unicode, Sign,
+// Seal, ExtendedSessionSecurity, TargetInfo, and 128-bit -- deliberately not
+// KeyExch (see ntlm_security_session_interop_fixtures_test.go's package doc
+// comment for why) and not Version (this hand-built header has no Version
+// block).
+func friendMicBuildChallenge(serverChallenge [8]byte, targetInfo []byte) []byte {
+	flags := uint32(0)
+	flags = ntlmsspNegotiateUnicode.Set(flags)
+	flags = ntlmsspNegotiateSign.Set(flags)
+	flags = ntlmsspNegotiateSeal.Set(flags)
+	flags = ntlmsspNegotiateExtendedSessionsecurity.Set(flags)
+	flags = ntlmsspNegotiateTargetInfo.Set(flags)
+	flags = ntlmsspNegotiate128.Set(flags)
+
+	buf := make([]byte, 48)
+	copy(buf[0:8], "NTLMSSP\x00")
+	buf[8] = 2 // MessageType = CHALLENGE
+	// TargetName varField left zero: no TargetName payload.
+	buf[20] = byte(flags)
+	buf[21] = byte(flags >> 8)
+	buf[22] = byte(flags >> 16)
+	buf[23] = byte(flags >> 24)
+	copy(buf[24:32], serverChallenge[:])
+	// reserved [32:40] left zero.
+	buf[40] = byte(len(targetInfo))
+	buf[41] = byte(len(targetInfo) >> 8)
+	buf[42] = buf[40]
+	buf[43] = buf[41]
+	buf[44] = 48 // BufferOffset
+
+	return append(buf, targetInfo...)
+}
+
+// TestGenerateWinrmMICInteropFixtures is the payload generate.sh runs to
+// produce winrm's NtChallengeResponse golden vectors. It is not a real test
+// of this package.
+func TestGenerateWinrmMICInteropFixtures(t *testing.T) {
+	specs := []friendMicSpec{
+		{
+			name:            "flags-absent",
+			serverChallenge: [8]byte{0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef},
+			clientChallenge: []byte{0xf0, 0xe1, 0xd2, 0xc3, 0xb4, 0xa5, 0x96, 0x87},
+			timestamp:       [8]byte{0x00, 0x40, 0x35, 0xd9, 0xdf, 0x81, 0xd2, 0x01},
+			includeFlags:    false,
+		},
+		{
+			name:            "flags-present",
+			serverChallenge: [8]byte{0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88},
+			clientChallenge: []byte{0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11},
+			timestamp:       [8]byte{0x00, 0x80, 0x6a, 0xb2, 0xbf, 0x81, 0xd2, 0x01},
+			targetInfoFlags: 0x00000001,
+			includeFlags:    true,
+		},
+	}
+
+	fmt.Println("// ntlm-mic-bodgit-fixtures:generated:begin")
+	fmt.Println("var ntlmMicBodgitInteropFixtures = []ntlmMicBodgitInteropFixture{")
+	for _, spec := range specs {
+		targetInfo := friendMicBuildTargetInfo(spec)
+		challengeToken := friendMicBuildChallenge(spec.serverChallenge, targetInfo)
+
+		client, err := NewClient(SetUserInfo(friendMicUsername, friendMicPassword))
+		if err != nil {
+			t.Fatalf("%s: NewClient: %v", spec.name, err)
+		}
+
+		saved := generateClientChallenge
+		generateClientChallenge = func() ([]byte, error) { return spec.clientChallenge, nil }
+
+		if _, err := client.Authenticate(nil, nil); err != nil {
+			generateClientChallenge = saved
+			t.Fatalf("%s: Authenticate (negotiate step): %v", spec.name, err)
+		}
+
+		authBytes, err := client.Authenticate(challengeToken, nil)
+		generateClientChallenge = saved
+		if err != nil {
+			t.Fatalf("%s: Authenticate (challenge step): %v", spec.name, err)
+		}
+
+		am := &authenticateMessage{}
+		if err := am.Unmarshal(authBytes); err != nil {
+			t.Fatalf("%s: authenticateMessage.Unmarshal: %v", spec.name, err)
+		}
+
+		fmt.Println("\t{")
+		fmt.Printf("\t\tname:                %q,\n", spec.name)
+		fmt.Printf("\t\tchallengeToken:      %s,\n", friendByteLiteral(challengeToken))
+		fmt.Printf("\t\tclientChallenge:     %s,\n", friendByteLiteral(spec.clientChallenge))
+		fmt.Printf("\t\tntChallengeResponse: %s,\n", friendByteLiteral(am.NtChallengeResponse))
+		fmt.Println("\t},")
+	}
+	fmt.Println("}")
+	fmt.Println("// ntlm-mic-bodgit-fixtures:generated:end")
 }
