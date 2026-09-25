@@ -2,8 +2,8 @@ package winrm
 
 import (
 	"bytes"
-	"crypto/rc4"
 	"encoding/base64"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
@@ -12,11 +12,9 @@ import (
 	"strings"
 	"sync"
 
-	ntlmssp "github.com/Azure/go-ntlmssp"
+	"github.com/bodgit/ntlmssp"
 	"github.com/masterzen/winrm/soap"
 )
-
-const sealedContentType = `multipart/encrypted;protocol="application/HTTP-SPNEGO-session-encrypted";boundary="Encrypted Boundary"`
 
 // ClientNTLM provides a transport via NTLMv2, negotiating message
 // confidentiality (key exchange/sealing) whenever the server requires it.
@@ -66,20 +64,15 @@ func NewClientNTLMWithProxyFunc(proxyfunc func(req *http.Request) (*url.URL, err
 }
 
 // ntlmSealingTransport implements WinRM's NTLM message-level encryption
-// (MS-WSMV §3.1.4.2). WinRM authentication is conn scoped, so the
-// AUTHENTICATE message and the first sealed request body must be sent
-// together in a single HTTP request. Subsequent requests reuse the
-// negotiated session key and are sealed with the same key
+// (MS-WSMV §3.1.4.2). The AUTHENTICATE message and the first sealed request
+// body are sent together in a single HTTP request; later requests reuse the
+// negotiated session.
 type ntlmSealingTransport struct {
 	inner http.RoundTripper
 
-	mu               sync.Mutex
-	authenticated    bool
-	clientSealCipher *rc4.Cipher
-	clientSignKey    []byte
-	serverSealCipher *rc4.Cipher
-	serverSignKey    []byte
-	clientSeqNum     uint32
+	mu            sync.Mutex
+	authenticated bool
+	session       *ntlmssp.SecuritySession
 }
 
 func newNTLMSealingTransport(inner http.RoundTripper) *ntlmSealingTransport {
@@ -111,13 +104,11 @@ func (t *ntlmSealingTransport) RoundTrip(req *http.Request) (*http.Response, err
 	}
 	// A 401 here means the session is stale, so redo the full handshake.
 	if resp.StatusCode == http.StatusUnauthorized {
-		io.Copy(io.Discard, resp.Body) //nolint:errcheck
+		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
 		t.mu.Lock()
 		t.authenticated = false
-		t.clientSealCipher = nil
-		t.serverSealCipher = nil
-		t.clientSeqNum = 0
+		t.session = nil
 		t.mu.Unlock()
 		return t.authenticateAndSend(req, body)
 	}
@@ -152,16 +143,20 @@ func (t *ntlmSealingTransport) authenticateAndSend(req *http.Request, body []byt
 		return resp, nil
 	}
 	schema, ok := ntlmSchema(resp.Header.Get("Www-Authenticate"))
-	io.Copy(io.Discard, resp.Body) //nolint:errcheck
+	io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
 	if !ok {
 		return nil, fmt.Errorf("ntlm: server did not offer NTLM/Negotiate authentication")
 	}
 
-	// Leg 2: send NEGOTIATE requesting key exchange, receive challenge.
-	negMsg, err := ntlmssp.NewNegotiateMessageWithOptions(ntlmssp.NegotiateMessageOptions{
-		RequestSealing: true,
-	})
+	domain, user := splitNTLMUsername(username)
+	client, err := ntlmssp.NewClient(ntlmssp.SetUserInfo(user, password), ntlmssp.SetDomain(domain), ntlmssp.SetVersion(ntlmssp.DefaultVersion()))
+	if err != nil {
+		return nil, err
+	}
+
+	// Leg 2: send NEGOTIATE (requesting sealing by default), receive challenge.
+	negMsg, err := client.Authenticate(nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +170,7 @@ func (t *ntlmSealingTransport) authenticateAndSend(req *http.Request, body []byt
 		return nil, err
 	}
 	challengeHeader := resp.Header.Get("Www-Authenticate")
-	io.Copy(io.Discard, resp.Body) //nolint:errcheck
+	io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusUnauthorized {
 		return nil, fmt.Errorf("ntlm: expected 401 with challenge, got %d", resp.StatusCode)
@@ -187,40 +182,22 @@ func (t *ntlmSealingTransport) authenticateAndSend(req *http.Request, body []byt
 		return nil, fmt.Errorf("ntlm: decode challenge: %w", err)
 	}
 
-	// Build the AUTHENTICATE message and obtain the exported session key.
-	var sessionKey []byte
-	authMsg, err := ntlmssp.NewAuthenticateMessage(challenge, username, password, &ntlmssp.AuthenticateMessageOptions{
-		ExportedSessionKey: &sessionKey,
-		RequireSealing:     true,
-	})
+	authMsg, err := client.Authenticate(challenge, nil)
 	if err != nil {
 		return nil, fmt.Errorf("ntlm: build authenticate message: %w", err)
 	}
-
-	cs, err := rc4.NewCipher(deriveClientSealKey(sessionKey))
-	if err != nil {
-		return nil, err
-	}
-	ss, err := rc4.NewCipher(deriveServerSealKey(sessionKey))
-	if err != nil {
-		return nil, err
-	}
-	clientSignKey := deriveClientSignKey(sessionKey)
-	serverSignKey := deriveServerSignKey(sessionKey)
+	session := client.SecuritySession()
 
 	t.mu.Lock()
-	t.clientSealCipher = cs
-	t.clientSignKey = clientSignKey
-	t.serverSealCipher = ss
-	t.serverSignKey = serverSignKey
-	seqNum := t.clientSeqNum
-	t.clientSeqNum++
+	t.session = session
 	t.authenticated = true
 	t.mu.Unlock()
 
 	// Leg 3: AUTHENTICATE + sealed body in one request
-	ciphertext, sig := sealMessage(cs, clientSignKey, seqNum, body)
-	multiBody := buildMultipartEncrypted(sig, ciphertext, len(body))
+	multiBody, contentType, err := sealForWinRM(session, body)
+	if err != nil {
+		return nil, err
+	}
 
 	authReq, err := http.NewRequestWithContext(ctx, req.Method, req.URL.String(), bytes.NewReader(multiBody))
 	if err != nil {
@@ -228,7 +205,7 @@ func (t *ntlmSealingTransport) authenticateAndSend(req *http.Request, body []byt
 	}
 	copySealedHeaders(authReq, req)
 	authReq.Header.Set("Authorization", schema+" "+base64.StdEncoding.EncodeToString(authMsg))
-	authReq.Header.Set("Content-Type", sealedContentType)
+	authReq.Header.Set("Content-Type", contentType)
 	authReq.ContentLength = int64(len(multiBody))
 
 	resp, err = t.inner.RoundTrip(authReq)
@@ -236,7 +213,7 @@ func (t *ntlmSealingTransport) authenticateAndSend(req *http.Request, body []byt
 		return nil, err
 	}
 	if strings.Contains(resp.Header.Get("Content-Type"), "multipart/encrypted") {
-		return t.unsealResponse(resp)
+		return unsealWinRMResponse(session, resp)
 	}
 	return resp, nil
 }
@@ -244,21 +221,20 @@ func (t *ntlmSealingTransport) authenticateAndSend(req *http.Request, body []byt
 // sendSealed encrypts body and sends it on the already authenticated connection, without repeating the handshake.
 func (t *ntlmSealingTransport) sendSealed(req *http.Request, body []byte) (*http.Response, error) {
 	t.mu.Lock()
-	seqNum := t.clientSeqNum
-	t.clientSeqNum++
-	cipher := t.clientSealCipher
-	signKey := t.clientSignKey
+	session := t.session
 	t.mu.Unlock()
 
-	ciphertext, sig := sealMessage(cipher, signKey, seqNum, body)
-	multiBody := buildMultipartEncrypted(sig, ciphertext, len(body))
+	multiBody, contentType, err := sealForWinRM(session, body)
+	if err != nil {
+		return nil, err
+	}
 
 	sealedReq, err := http.NewRequestWithContext(req.Context(), req.Method, req.URL.String(), bytes.NewReader(multiBody))
 	if err != nil {
 		return nil, err
 	}
 	copySealedHeaders(sealedReq, req)
-	sealedReq.Header.Set("Content-Type", sealedContentType)
+	sealedReq.Header.Set("Content-Type", contentType)
 	sealedReq.ContentLength = int64(len(multiBody))
 
 	resp, err := t.inner.RoundTrip(sealedReq)
@@ -266,25 +242,58 @@ func (t *ntlmSealingTransport) sendSealed(req *http.Request, body []byte) (*http
 		return nil, err
 	}
 	if strings.Contains(resp.Header.Get("Content-Type"), "multipart/encrypted") {
-		return t.unsealResponse(resp)
+		return unsealWinRMResponse(session, resp)
 	}
 	return resp, nil
 }
 
-// unsealResponse decrypts a WinRM multipart/encrypted response body.
+// sealedContentType is the WinRM message-encryption envelope's Content-Type
+// header value (MS-WSMV §3.1.4.1.1).
+const sealedContentType = `multipart/encrypted;protocol="application/HTTP-SPNEGO-session-encrypted";boundary="Encrypted Boundary"`
+
+// sealForWinRM signs and seals body with session and wraps it in the WinRM
+// multipart/encrypted envelope (MS-WSMV §3.1.4.1.1).
+//
+// Hand-built instead of using bodgit/ntlmssp/http's Wrap: its OriginalContent
+// Length is computed off the encrypted blob, not the plaintext body, so it's
+// always 20 bytes too large and gets rejected by real WinRM servers.
+func sealForWinRM(session *ntlmssp.SecuritySession, body []byte) ([]byte, string, error) {
+	sealed, sig, err := session.Wrap(body)
+	if err != nil {
+		return nil, "", fmt.Errorf("ntlm: seal message: %w", err)
+	}
+
+	var buf bytes.Buffer
+	fmt.Fprintf(&buf,
+		"--Encrypted Boundary\r\n"+
+			"Content-Type: application/HTTP-SPNEGO-session-encrypted\r\n"+
+			"OriginalContent: type=application/soap+xml;charset=UTF-8;Length=%d\r\n"+
+			"--Encrypted Boundary\r\n"+
+			"Content-Type: application/octet-stream\r\n",
+		len(body),
+	)
+	sigLen := make([]byte, 4)
+	binary.LittleEndian.PutUint32(sigLen, uint32(len(sig)))
+	buf.Write(sigLen)
+	buf.Write(sig)
+	buf.Write(sealed)
+	buf.WriteString("--Encrypted Boundary--\r\n")
+
+	return buf.Bytes(), sealedContentType, nil
+}
+
+// unsealWinRMResponse decrypts a WinRM multipart/encrypted response body.
 // rewrites the response so that callers see plain application/soap+xml.
-func (t *ntlmSealingTransport) unsealResponse(resp *http.Response) (*http.Response, error) {
+func unsealWinRMResponse(session *ntlmssp.SecuritySession, resp *http.Response) (*http.Response, error) {
 	raw, err := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	if err != nil {
 		return nil, err
 	}
 
-	// After splitting on "--Encrypted Boundary" each part begins with "\r\n".
-	// The octet-stream part is "\r\nContent-Type: application/octet-stream\r\n$payload".
 	var payload []byte
 	for _, part := range bytes.Split(raw, []byte("--Encrypted Boundary")) {
-		data, ok := bytes.CutPrefix(part, []byte("\r\nContent-Type: application/octet-stream\r\n"))
+		data, ok := bytes.CutPrefix(part, []byte("\r\n\tContent-Type: application/octet-stream\r\n"))
 		if !ok {
 			continue
 		}
@@ -295,12 +304,7 @@ func (t *ntlmSealingTransport) unsealResponse(resp *http.Response) (*http.Respon
 		return nil, fmt.Errorf("ntlm: encrypted response too short (%d bytes)", len(payload))
 	}
 
-	t.mu.Lock()
-	serverCipher := t.serverSealCipher
-	serverSignKey := t.serverSignKey
-	t.mu.Unlock()
-
-	plaintext, err := unsealMessage(serverCipher, serverSignKey, payload[4:20], payload[20:])
+	plaintext, err := session.Unwrap(payload[20:], payload[4:20])
 	if err != nil {
 		return nil, fmt.Errorf("ntlm: unseal response: %w", err)
 	}
@@ -309,25 +313,6 @@ func (t *ntlmSealingTransport) unsealResponse(resp *http.Response) (*http.Respon
 	resp.ContentLength = int64(len(plaintext))
 	resp.Header.Set("Content-Type", soapXML+";charset=UTF-8")
 	return resp, nil
-}
-
-// buildMultipartEncrypted constructs the WinRM multipart/encrypted body (MS-WSMV §3.1.4.2).
-// no blank lines between header lines or between the last header and the binary payload.
-func buildMultipartEncrypted(sig, ciphertext []byte, originalLen int) []byte {
-	var buf bytes.Buffer
-	fmt.Fprintf(&buf,
-		"--Encrypted Boundary\r\n"+
-			"Content-Type: application/HTTP-SPNEGO-session-encrypted\r\n"+
-			"OriginalContent: type=application/soap+xml;charset=UTF-8;Length=%d\r\n"+
-			"--Encrypted Boundary\r\n"+
-			"Content-Type: application/octet-stream\r\n",
-		originalLen,
-	)
-	buf.Write([]byte{16, 0, 0, 0}) // 4-byte LE length of the signature
-	buf.Write(sig)
-	buf.Write(ciphertext)
-	buf.WriteString("--Encrypted Boundary--\r\n")
-	return buf.Bytes()
 }
 
 // copySealedHeaders copies headers from src to dst
@@ -349,4 +334,15 @@ func ntlmSchema(header string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// gets domain from username
+func splitNTLMUsername(username string) (string, string) {
+	if user, domain, ok := strings.Cut(username, "@"); ok {
+		return domain, user
+	}
+	if domain, user, ok := strings.Cut(username, `\`); ok {
+		return domain, user
+	}
+	return "", username
 }
