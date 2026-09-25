@@ -274,11 +274,11 @@ func (s *WinRMSuite) TestAzureNTLMSecuritySessionAcceptsWeakerStrengthsByDefault
 	_, err := rand.Read(sessionKey)
 	c.Assert(err, IsNil)
 
-	var flags56 uint32 = ntlmNegotiateExtendedSessionSecurity | ntlmNegotiate56
+	var flags56 uint32 = ntlmNegotiateExtendedSessionSecurity | ntlmNegotiate56 | ntlmNegotiateSeal
 	_, err = newAzureNTLMSecuritySession(sessionKey, flags56, true, NTLMKeyExchangeOptions{})
 	c.Assert(err, IsNil)
 
-	var flags40 uint32 = ntlmNegotiateExtendedSessionSecurity
+	var flags40 uint32 = ntlmNegotiateExtendedSessionSecurity | ntlmNegotiateSeal
 	_, err = newAzureNTLMSecuritySession(sessionKey, flags40, true, NTLMKeyExchangeOptions{})
 	c.Assert(err, IsNil)
 }
@@ -292,7 +292,7 @@ func (s *WinRMSuite) TestAzureNTLMSecuritySessionMinimumKeyBitsOptIn(c *C) {
 	_, err := rand.Read(sessionKey)
 	c.Assert(err, IsNil)
 
-	var flags56 uint32 = ntlmNegotiateExtendedSessionSecurity | ntlmNegotiate56
+	var flags56 uint32 = ntlmNegotiateExtendedSessionSecurity | ntlmNegotiate56 | ntlmNegotiateSeal
 
 	_, err = newAzureNTLMSecuritySession(sessionKey, flags56, true, NTLMKeyExchangeOptions{MinimumKeyBits: 128})
 	c.Assert(err, ErrorMatches, "ntlmssp: negotiated 56-bit key is below the required minimum of 128 bits")
@@ -313,15 +313,15 @@ func (s *WinRMSuite) TestAzureNTLMSecuritySessionWrapUnwrapAcrossKeyStrengths(c 
 	}{
 		{
 			name:  "128-bit",
-			flags: ntlmNegotiateExtendedSessionSecurity | ntlmNegotiate128,
+			flags: ntlmNegotiateExtendedSessionSecurity | ntlmNegotiate128 | ntlmNegotiateSeal,
 		},
 		{
 			name:  "56-bit",
-			flags: ntlmNegotiateExtendedSessionSecurity | ntlmNegotiate56,
+			flags: ntlmNegotiateExtendedSessionSecurity | ntlmNegotiate56 | ntlmNegotiateSeal,
 		},
 		{
 			name:  "40-bit",
-			flags: ntlmNegotiateExtendedSessionSecurity,
+			flags: ntlmNegotiateExtendedSessionSecurity | ntlmNegotiateSeal,
 		},
 	}
 
@@ -358,6 +358,19 @@ func (s *WinRMSuite) TestAzureNTLMSecuritySessionRequiresExtendedSessionSecurity
 
 	_, err = newAzureNTLMSecuritySession(sessionKey, flags, true, NTLMKeyExchangeOptions{MinimumKeyBits: 40})
 	c.Assert(err, ErrorMatches, "ntlmssp: NTLM1/LM-key mode is not supported.*")
+}
+
+// TestAzureNTLMSecuritySessionRequiresSeal checks that negotiated flags
+// missing NTLMSSP_NEGOTIATE_SEAL are rejected with a clear error instead of
+// silently sealing traffic the server was never told to decrypt.
+func (s *WinRMSuite) TestAzureNTLMSecuritySessionRequiresSeal(c *C) {
+	sessionKey := make([]byte, 16)
+	_, err := rand.Read(sessionKey)
+	c.Assert(err, IsNil)
+
+	var flags uint32 = ntlmNegotiateExtendedSessionSecurity | ntlmNegotiate128 // no ntlmNegotiateSeal
+	_, err = newAzureNTLMSecuritySession(sessionKey, flags, true, NTLMKeyExchangeOptions{})
+	c.Assert(err, ErrorMatches, "ntlmssp: server did not grant NTLMSSP_NEGOTIATE_SEAL; message confidentiality unavailable")
 }
 
 // TestAzureNTLMSecuritySessionWrapUnwrapWithoutKeyExch checks that Wrap and

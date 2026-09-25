@@ -113,6 +113,9 @@ func newAzureNTLMSecuritySession(sessionKey []byte, negotiateFlags uint32, isCli
 	if err != nil {
 		return nil, err
 	}
+	if negotiateFlags&ntlmNegotiateSeal == 0 {
+		return nil, errors.New("ntlmssp: server did not grant NTLMSSP_NEGOTIATE_SEAL; message confidentiality unavailable")
+	}
 	if !opts.satisfiedBy(strength) {
 		return nil, fmt.Errorf("ntlmssp: negotiated %d-bit key is below the required minimum of %d bits", int(strength), opts.MinimumKeyBits)
 	}
