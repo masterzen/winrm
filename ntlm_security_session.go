@@ -206,12 +206,24 @@ func negotiateAzureNTLMSessionKey(username, password string, negotiateChallenge 
 		return nil, nil, 0, err
 	}
 
+	patchedChallenge, micRequired, err := ntlmPatchChallengeForMIC(challengeToken)
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("ntlmssp: preparing MIC: %w", err)
+	}
+
 	var exportedSessionKey []byte
-	authenticateToken, err = ntlmssp.NewAuthenticateMessage(challengeToken, username, password, &ntlmssp.AuthenticateMessageOptions{
+	authenticateToken, err = ntlmssp.NewAuthenticateMessage(patchedChallenge, username, password, &ntlmssp.AuthenticateMessageOptions{
 		ExportedSessionKey: &exportedSessionKey,
 	})
 	if err != nil {
 		return nil, nil, 0, fmt.Errorf("ntlmssp: building AUTHENTICATE message: %w", err)
+	}
+
+	if micRequired {
+		authenticateToken, err = ntlmAttachMIC(negotiateToken, challengeToken, authenticateToken, exportedSessionKey)
+		if err != nil {
+			return nil, nil, 0, fmt.Errorf("ntlmssp: attaching MIC: %w", err)
+		}
 	}
 
 	return authenticateToken, exportedSessionKey, negotiateFlags, nil
