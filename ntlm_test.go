@@ -1,54 +1,89 @@
 package winrm
 
 import (
-	"encoding/base64"
-	"encoding/binary"
-	"fmt"
+	"io"
 	"net/http"
-	"strings"
 	"testing"
 
 	"net"
 	"time"
-
-	ntlmssp "github.com/Azure/go-ntlmssp"
-	. "gopkg.in/check.v1"
 )
 
-func ntlmChallengeMessage(serverChallenge [8]byte) []byte {
-	const flags = 1<<0 | 1<<4 | 1<<5 | 1<<29 | 1<<30
-	msg := make([]byte, 48)
-	copy(msg[0:8], "NTLMSSP\x00")
-	binary.LittleEndian.PutUint32(msg[8:12], 2)
-	binary.LittleEndian.PutUint32(msg[20:24], flags)
-	copy(msg[24:32], serverChallenge[:])
-	return msg
+// ntlmTestServeEncryptedResponse decrypts r's body, to confirm it really
+// was sealed, and replies with responseBody encrypted the same way. It
+// does not assert on the request's content: unlike encryption_ntlm_test.go's
+// ntlmTestServeEncrypted, the tests below drive real ClientNTLM/CreateShell
+// traffic, which carries a fresh message ID on every request, so an exact
+// content match does not apply here.
+func ntlmTestServeEncryptedResponse(t *testing.T, session *azureNTLMSecuritySession, responseBody string, w http.ResponseWriter, r *http.Request) {
+	t.Helper()
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		t.Fatalf("read encrypted request body: %v", err)
+	}
+	serverEncryption, err := newWinRMMessageEncryption("ntlm", azureNTLMMessageProtector{session: session})
+	if err != nil {
+		t.Fatalf("build server message encryption: %v", err)
+	}
+	if _, err := serverEncryption.decrypt(body); err != nil {
+		t.Fatalf("decrypt request body: %v", err)
+	}
+	encryptedResponse, err := serverEncryption.encrypt([]byte(responseBody))
+	if err != nil {
+		t.Fatalf("encrypt response body: %v", err)
+	}
+	w.Header().Set("Content-Type", serverEncryption.contentType())
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(encryptedResponse)
 }
 
-func isNTLMNegotiateMessage(token []byte) bool {
-	return len(token) >= 12 && binary.LittleEndian.Uint32(token[8:12]) == 1
+// ntlmTestChallengeFlags grants NTLM message sealing (MS-NLMP
+// §2.2.2.5) with 128-bit extended session security and key exchange, the
+// combination the handshake in ntlm_sealing_transport.go requires.
+func ntlmTestChallengeFlags() uint32 {
+	return uint32(ntlmTestNegotiateUnicode | ntlmTestNegotiateNTLM |
+		ntlmNegotiateSign | ntlmNegotiateSeal |
+		ntlmNegotiateExtendedSessionSecurity | ntlmNegotiate128 | ntlmNegotiateKeyExch)
 }
 
-func (s *WinRMSuite) TestHttpNTLMRequest(c *C) {
-	ts, host, port, err := StartTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/soap+xml")
-		_, _ = w.Write([]byte(response))
-	}))
-	c.Assert(err, IsNil)
+func TestHttpNTLMRequest(t *testing.T) {
+	var serverSession *azureNTLMSecuritySession
+	ts := ntlmTestHandshakeServer(t, [8]byte{1, 2, 3, 4, 5, 6, 7, 8}, ntlmTestChallengeFlags(),
+		func(session *azureNTLMSecuritySession) {
+			serverSession = session
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			if serverSession == nil {
+				t.Fatalf("received an unauthenticated request before the NTLM handshake completed")
+			}
+			ntlmTestServeEncryptedResponse(t, serverSession, createShellResponse, w, r)
+		},
+	)
 	defer ts.Close()
+
+	host, port, err := FindHostAndPortFromURL(ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
 	endpoint := NewEndpoint(host, port, false, false, nil, nil, nil, 0)
 
 	params := *DefaultParameters
 	params.TransportDecorator = func() Transporter { return &ClientNTLM{} }
-	client, err := NewClientWithParameters(endpoint, "test", "test", &params)
+	client, err := NewClientWithParameters(endpoint, ntlmTestUsername, ntlmTestPassword, &params)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	c.Assert(err, IsNil)
 	shell, err := client.CreateShell()
-	c.Assert(err, IsNil)
-	c.Assert(shell.id, Equals, "67A74734-DD32-4F10-89DE-49A060483810")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shell.id != "67A74734-DD32-4F10-89DE-49A060483810" {
+		t.Fatalf("shell id = %q, want %q", shell.id, "67A74734-DD32-4F10-89DE-49A060483810")
+	}
 }
 
-func (s *WinRMSuite) TestHttpNTLMViaCustomDialerRequest(c *C) {
+func TestHttpNTLMViaCustomDialerRequest(t *testing.T) {
 	normalDialer := (&net.Dialer{
 		Timeout:   30 * time.Second,
 		KeepAlive: 30 * time.Second,
@@ -59,77 +94,107 @@ func (s *WinRMSuite) TestHttpNTLMViaCustomDialerRequest(c *C) {
 		return normalDialer(network, addr)
 	}
 
-	ts, host, port, err := StartTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/soap+xml")
-		_, _ = w.Write([]byte(response))
-	}))
-	c.Assert(err, IsNil)
+	var serverSession *azureNTLMSecuritySession
+	ts := ntlmTestHandshakeServer(t, [8]byte{1, 2, 3, 4, 5, 6, 7, 8}, ntlmTestChallengeFlags(),
+		func(session *azureNTLMSecuritySession) {
+			serverSession = session
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			if serverSession == nil {
+				t.Fatalf("received an unauthenticated request before the NTLM handshake completed")
+			}
+			ntlmTestServeEncryptedResponse(t, serverSession, createShellResponse, w, r)
+		},
+	)
 	defer ts.Close()
+
+	host, port, err := FindHostAndPortFromURL(ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
 	endpoint := NewEndpoint(host, port, false, false, nil, nil, nil, 0)
 
 	params := *DefaultParameters
 	params.TransportDecorator = func() Transporter { return NewClientNTLMWithDial(dial) }
-	client, err := NewClientWithParameters(endpoint, "test", "test", &params)
-	c.Assert(err, IsNil)
-	_, err = client.CreateShell()
-	c.Assert(err, IsNil)
-	c.Assert(usedCustomDialer, Equals, true)
+	client, err := NewClientWithParameters(endpoint, ntlmTestUsername, ntlmTestPassword, &params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.CreateShell(); err != nil {
+		t.Fatal(err)
+	}
+	if !usedCustomDialer {
+		t.Error("usedCustomDialer = false, want true")
+	}
 }
 
 // TestNTLMSessionReusedAcrossRequests checks the case the sealing transport
-// exists for: the 3-leg NTLM handshake (401 -> 401+challenge -> 200) only
-// happens once per connection, and later requests reuse the negotiated
-// session (no Authorization header, no re-challenge).
-func (s *WinRMSuite) TestNTLMSessionReusedAcrossRequests(c *C) {
-	var authenticated bool
-	var total, negotiations int
-	ts, host, port, err := StartTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		total++
-		auth := r.Header.Get("Authorization")
-		switch {
-		case auth == "" && !authenticated:
-			w.Header().Set("Www-Authenticate", "NTLM")
-			w.WriteHeader(http.StatusUnauthorized)
-		case strings.HasPrefix(auth, "NTLM "):
-			negotiations++
-			token, decErr := base64.StdEncoding.DecodeString(strings.TrimPrefix(auth, "NTLM "))
-			c.Assert(decErr, IsNil)
-			if isNTLMNegotiateMessage(token) {
-				challenge := ntlmChallengeMessage([8]byte{1, 2, 3, 4, 5, 6, 7, 8})
-				w.Header().Set("Www-Authenticate", "NTLM "+base64.StdEncoding.EncodeToString(challenge))
-				w.WriteHeader(http.StatusUnauthorized)
-				return
+// exists for: the NTLM handshake (negotiate leg, then authenticate leg)
+// only happens once per connection, and a later request reuses the
+// negotiated session -- no re-challenge, and (implied by
+// ntlmTestHandshakeServer only invoking its encrypted-request callback when
+// the request carries no Authorization header) no repeated Authorization
+// header either.
+func TestNTLMSessionReusedAcrossRequests(t *testing.T) {
+	var serverSession *azureNTLMSecuritySession
+	handshakes := 0
+	encryptedRequests := 0
+
+	ts := ntlmTestHandshakeServer(t, [8]byte{1, 2, 3, 4, 5, 6, 7, 8}, ntlmTestChallengeFlags(),
+		func(session *azureNTLMSecuritySession) {
+			handshakes++
+			serverSession = session
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			encryptedRequests++
+			if serverSession == nil {
+				t.Fatalf("received an unauthenticated request before the NTLM handshake completed")
 			}
-			authenticated = true
-			w.Header().Set("Content-Type", "application/soap+xml")
-			fmt.Fprintln(w, createShellResponse)
-		default:
-			// already authenticated: a reused, sealed request should carry no Authorization header
-			c.Assert(auth, Equals, "")
-			w.Header().Set("Content-Type", "application/soap+xml")
-			fmt.Fprintln(w, createShellResponse)
-		}
-	}))
-	c.Assert(err, IsNil)
+			ntlmTestServeEncryptedResponse(t, serverSession, createShellResponse, w, r)
+		},
+	)
 	defer ts.Close()
+
+	host, port, err := FindHostAndPortFromURL(ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
 	endpoint := NewEndpoint(host, port, false, false, nil, nil, nil, 0)
 
 	params := *DefaultParameters
 	params.TransportDecorator = func() Transporter { return &ClientNTLM{} }
-	client, err := NewClientWithParameters(endpoint, "test", "test", &params)
-	c.Assert(err, IsNil)
+	client, err := NewClientWithParameters(endpoint, ntlmTestUsername, ntlmTestPassword, &params)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	shell, err := client.CreateShell()
-	c.Assert(err, IsNil)
-	c.Assert(shell.id, Equals, "67A74734-DD32-4F10-89DE-49A060483810")
-	c.Assert(total, Equals, 3)
-	c.Assert(negotiations, Equals, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shell.id != "67A74734-DD32-4F10-89DE-49A060483810" {
+		t.Fatalf("shell id = %q, want %q", shell.id, "67A74734-DD32-4F10-89DE-49A060483810")
+	}
+	if handshakes != 1 {
+		t.Fatalf("completed NTLM handshakes after first CreateShell = %d, want 1", handshakes)
+	}
+	if encryptedRequests != 1 {
+		t.Fatalf("encrypted requests after first CreateShell = %d, want 1", encryptedRequests)
+	}
 
 	shell, err = client.CreateShell()
-	c.Assert(err, IsNil)
-	c.Assert(shell.id, Equals, "67A74734-DD32-4F10-89DE-49A060483810")
-	c.Assert(total, Equals, 4)
-	c.Assert(negotiations, Equals, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shell.id != "67A74734-DD32-4F10-89DE-49A060483810" {
+		t.Fatalf("shell id = %q, want %q", shell.id, "67A74734-DD32-4F10-89DE-49A060483810")
+	}
+	if handshakes != 1 {
+		t.Fatalf("completed NTLM handshakes after second CreateShell = %d, want 1 (the session should be reused)", handshakes)
+	}
+	if encryptedRequests != 2 {
+		t.Fatalf("encrypted requests after second CreateShell = %d, want 2", encryptedRequests)
+	}
 }
 
 // TestNTLMTransportPinsSingleConnection checks that ClientNTLM.Transport
@@ -144,14 +209,14 @@ func TestNTLMTransportPinsSingleConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	negotiator, ok := client.transport.(*ntlmssp.Negotiator)
+	sealing, ok := client.transport.(*ntlmSealingTransport)
 	if !ok {
-		t.Fatalf("ClientNTLM transport is %T, want *ntlmssp.Negotiator", client.transport)
+		t.Fatalf("ClientNTLM transport is %T, want *ntlmSealingTransport", client.transport)
 	}
 
-	transport, ok := negotiator.RoundTripper.(*http.Transport)
+	transport, ok := sealing.inner.(*http.Transport)
 	if !ok {
-		t.Fatalf("negotiator's underlying transport is %T, want *http.Transport", negotiator.RoundTripper)
+		t.Fatalf("sealing transport's underlying transport is %T, want *http.Transport", sealing.inner)
 	}
 
 	if transport.DisableKeepAlives {

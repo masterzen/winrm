@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/Azure/go-ntlmssp"
 	"github.com/masterzen/winrm/soap"
 )
 
@@ -29,7 +28,7 @@ func (c *ClientNTLM) Transport(endpoint *Endpoint) error {
 		t.IdleConnTimeout = 0
 	}
 
-	c.clientRequest.transport = &ntlmssp.Negotiator{RoundTripper: c.clientRequest.transport}
+	c.clientRequest.transport = newNTLMSealingTransport(c.clientRequest.transport)
 	return nil
 }
 
