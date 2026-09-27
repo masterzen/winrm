@@ -39,6 +39,9 @@ gen-ntlm-fixtures:
 	@printf "$(OK_COLOR)==> Regenerating NTLM/bodgit interop fixtures$(NO_COLOR)\n"
 	./scripts/ntlm-bodgit-fixtures/generate.sh
 
+test-integration:
+	go test ./integrationTest/... -v
+
 lint:
 	@if ! $(GOLANGCI_LINT) version 2>/dev/null | grep -q "$(GOLANGCI_LINT_VERSION:v%=%)"; then \
 		printf "$(OK_COLOR)==> Installing golangci-lint $(GOLANGCI_LINT_VERSION)$(NO_COLOR)\n"; \
@@ -47,4 +50,4 @@ lint:
 	@printf "$(OK_COLOR)==> Linting$(NO_COLOR)\n"
 	$(GOLANGCI_LINT) run ./...
 
-.PHONY: all clean deps format gen-ntlm-fixtures lint test updatedeps
+.PHONY: all clean deps format gen-ntlm-fixtures lint test test-integration updatedeps

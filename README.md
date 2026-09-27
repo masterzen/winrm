@@ -425,16 +425,19 @@ if err != nil {
 
 __N.B.:__ CredSSP binds authentication state and its TLS tunnel to a single connection, so all requests on a CredSSP client are serialized. Because a long-polling output `Receive` holds that lock until it returns, concurrent stdin sends are stalled behind each poll. Real-time interactive stdin is therefore not supported over CredSSP; non-interactive `RunCmd`/`RunPS` (no stdin) are unaffected. If the server drops the pinned connection, the client transparently re-runs the handshake once on the next request.
 
-### Running opt-in CredSSP integration tests
-The CredSSP live integration test is disabled by default and only compiled when using the `credssp_integration` build tag.
+### Running opt-in integration tests
+All real-Windows integration tests (CredSSP included) live in
+[`integrationTest/`](integrationTest/README.md) as env-var-driven subtests
+of a single `go test` entry point. See that package's README for the full
+environment variable contract and `SETUP.md` for how to get a Windows host
+to point it at.
 
 ```bash
-WINRM_CREDSSP_HOST=win-host WINRM_CREDSSP_PORT=5985 \
-WINRM_CREDSSP_USER='DOMAIN\\user' WINRM_CREDSSP_PASSWORD=... \
-go test -tags credssp_integration -run CredSSPIntegration -v ./...
+go test ./integrationTest/... -v
 ```
 
-If the required environment variables are unset, the test will be skipped.
+Every subtest skips itself (never fails) if its environment variables are
+unset.
 
 
 By passing a Dial in the Parameters struct it is possible to use different dialer (e.g. tunnel through SSH)
