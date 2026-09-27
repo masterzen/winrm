@@ -219,6 +219,11 @@ func negotiateAzureNTLMSessionKey(username, password string, negotiateChallenge 
 		return nil, nil, 0, fmt.Errorf("ntlmssp: building AUTHENTICATE message: %w", err)
 	}
 
+	authenticateToken, err = ntlmInsertVersion(authenticateToken, negotiateFlags)
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("ntlmssp: adding Version block: %w", err)
+	}
+
 	if micRequired {
 		authenticateToken, err = ntlmAttachMIC(negotiateToken, challengeToken, authenticateToken, exportedSessionKey)
 		if err != nil {

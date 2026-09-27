@@ -157,6 +157,47 @@ func ntlmPatchChallengeForMIC(challengeToken []byte) (patched []byte, micRequire
 	return patched, true, nil
 }
 
+// ntlmVersionBlock is a fixed, 8-byte NTLM Version field (MS-NLMP
+// §2.2.2.10). Its content is never validated by a receiver — only whether
+// the field is present at all when NTLMSSP_NEGOTIATE_VERSION is negotiated
+// — so this mirrors the placeholder value (Windows 7 SP1, NTLM revision 15)
+// this package's own NEGOTIATE message already sends, purely for internal
+// consistency.
+var ntlmVersionBlock = [8]byte{6, 1, 0xb1, 0x1d, 0, 0, 0, 0x0f}
+
+// ntlmInsertVersion adds the optional Version block to authenticateToken
+// and sets NTLMSSP_NEGOTIATE_VERSION in its own NegotiateFlags, when
+// negotiatedFlags (the CHALLENGE_MESSAGE's flags) negotiated it.
+// go-ntlmssp's own encoder always clears this flag and never includes the
+// block. Some real-world WinRM/NTLM servers reject an AUTHENTICATE_MESSAGE
+// that omits it after negotiating it — confirmed against a real Windows
+// Server target (rejected with SEC_E_INVALID_TOKEN, 0x80090308), and
+// matching a known interop issue in other NTLM client implementations:
+// https://github.com/jborean93/smbprotocol/issues/216
+func ntlmInsertVersion(authenticateToken []byte, negotiatedFlags uint32) ([]byte, error) {
+	if negotiatedFlags&ntlmNegotiateVersion == 0 {
+		return authenticateToken, nil
+	}
+	if len(authenticateToken) < 64 {
+		return nil, fmt.Errorf("ntlmssp: AUTHENTICATE token too short to contain a fixed header: %d bytes", len(authenticateToken))
+	}
+
+	withVersion := make([]byte, 0, len(authenticateToken)+8)
+	withVersion = append(withVersion, authenticateToken[:64]...)
+	withVersion = append(withVersion, ntlmVersionBlock[:]...)
+	withVersion = append(withVersion, authenticateToken[64:]...)
+
+	flags := binary.LittleEndian.Uint32(withVersion[60:64]) | ntlmNegotiateVersion
+	binary.LittleEndian.PutUint32(withVersion[60:64], flags)
+
+	for _, pos := range ntlmVarFieldOffsetPositions {
+		bufferOffset := binary.LittleEndian.Uint32(withVersion[pos.offsetPos : pos.offsetPos+4])
+		binary.LittleEndian.PutUint32(withVersion[pos.offsetPos:pos.offsetPos+4], bufferOffset+8)
+	}
+
+	return withVersion, nil
+}
+
 // ntlmVarFieldOffsetPositions lists, for each of the six varField
 // descriptors in the fixed 64-byte AUTHENTICATE_MESSAGE header (MS-NLMP
 // §2.2.1.3, and see Azure/go-ntlmssp's authenticateMessageFields), the byte
@@ -178,31 +219,41 @@ var ntlmVarFieldOffsetPositions = [6]struct {
 // authenticateToken. challengeToken must be the original, unpatched
 // CHALLENGE_MESSAGE bytes as received from the server (not the locally
 // patched copy passed to ntlmssp.NewAuthenticateMessage): the MIC covers
-// what was actually exchanged on the wire.
+// what was actually exchanged on the wire. authenticateToken must already
+// have gone through ntlmInsertVersion, so headerEnd (64, or 72 if a Version
+// block is present) reflects where the MIC actually belongs.
 func ntlmAttachMIC(negotiateToken, challengeToken, authenticateToken, exportedSessionKey []byte) ([]byte, error) {
 	if len(authenticateToken) < 64 {
 		return nil, fmt.Errorf("ntlmssp: AUTHENTICATE token too short to contain a fixed header: %d bytes", len(authenticateToken))
 	}
+	headerEnd := 64
 	if flags := binary.LittleEndian.Uint32(authenticateToken[60:64]); flags&ntlmNegotiateVersion != 0 {
-		return nil, fmt.Errorf("ntlmssp: AUTHENTICATE_MESSAGE negotiates NTLMSSP_NEGOTIATE_VERSION; MIC header offsets do not support a Version block")
+		headerEnd = 72
+	}
+	if len(authenticateToken) < headerEnd {
+		return nil, fmt.Errorf("ntlmssp: AUTHENTICATE token too short to contain its Version block: %d bytes", len(authenticateToken))
 	}
 
 	withMIC := make([]byte, 0, len(authenticateToken)+16)
-	withMIC = append(withMIC, authenticateToken[:64]...)
+	withMIC = append(withMIC, authenticateToken[:headerEnd]...)
 	withMIC = append(withMIC, make([]byte, 16)...)
-	withMIC = append(withMIC, authenticateToken[64:]...)
+	withMIC = append(withMIC, authenticateToken[headerEnd:]...)
 
 	for _, pos := range ntlmVarFieldOffsetPositions {
-		fieldLen := binary.LittleEndian.Uint16(withMIC[pos.lenPos : pos.lenPos+2])
-		if fieldLen == 0 {
-			continue
-		}
+		// Shift every varField's BufferOffset by 16, even when Len is 0.
+		// go-ntlmssp still points a zero-length field at a real position
+		// (wherever the next field's data starts); leaving that position
+		// unpatched after splicing in the MIC makes it land 16 bytes short,
+		// inside whatever field now occupies that space. Windows's NTLM SSP
+		// validates field bounds regardless of length and rejects the whole
+		// AUTHENTICATE_MESSAGE with SEC_E_INVALID_TOKEN (0x80090308) when
+		// that happens — confirmed against a real Windows Server target.
 		bufferOffset := binary.LittleEndian.Uint32(withMIC[pos.offsetPos : pos.offsetPos+4])
 		binary.LittleEndian.PutUint32(withMIC[pos.offsetPos:pos.offsetPos+4], bufferOffset+16)
 	}
 
 	mic := ntlmHmacMd5(exportedSessionKey, negotiateToken, challengeToken, withMIC)
-	copy(withMIC[64:80], mic)
+	copy(withMIC[headerEnd:headerEnd+16], mic)
 
 	return withMIC, nil
 }

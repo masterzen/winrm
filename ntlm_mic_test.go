@@ -292,10 +292,19 @@ func (s *WinRMSuite) TestNtlmAttachMICPreservesAuthenticatePayloadFields(c *C) {
 	for i, f := range ntlmMicVarFieldPositions {
 		length := int(binary.LittleEndian.Uint16(micToken[f.lenPos : f.lenPos+2]))
 		c.Assert(length, Equals, originals[i].length)
-		if length == 0 {
-			continue // don't assert anything about a zero-length field's BufferOffset
-		}
+
+		originalOffset := int(binary.LittleEndian.Uint32(authenticateToken[f.offsetPos : f.offsetPos+4]))
 		offset := int(binary.LittleEndian.Uint32(micToken[f.offsetPos : f.offsetPos+4]))
+		// Every field's BufferOffset must shift by exactly 16, even at
+		// length 0: Windows's NTLM SSP validates field bounds regardless of
+		// length and rejects the whole AUTHENTICATE_MESSAGE with
+		// SEC_E_INVALID_TOKEN if a stale offset lands inside another
+		// field's data (confirmed against a real Windows Server target).
+		c.Assert(offset, Equals, originalOffset+16)
+
+		if length == 0 {
+			continue
+		}
 		got := micToken[offset : offset+length]
 		c.Assert(got, DeepEquals, originals[i].bytes)
 	}
@@ -371,10 +380,8 @@ func (s *WinRMSuite) TestNtlmAttachMICHMACMatchesIndependentComputation(c *C) {
 
 		withMIC := append(append(append([]byte{}, authenticateToken[:64]...), make([]byte, 16)...), authenticateToken[64:]...)
 		for _, pos := range ntlmMicVarFieldPositions {
-			length := binary.LittleEndian.Uint16(withMIC[pos.lenPos : pos.lenPos+2])
-			if length == 0 {
-				continue
-			}
+			// Every field's BufferOffset shifts by 16, zero-length or not —
+			// see ntlmAttachMIC's comment in ntlm_mic.go for why.
 			off := binary.LittleEndian.Uint32(withMIC[pos.offsetPos : pos.offsetPos+4])
 			binary.LittleEndian.PutUint32(withMIC[pos.offsetPos:pos.offsetPos+4], off+16)
 		}
@@ -389,22 +396,58 @@ func (s *WinRMSuite) TestNtlmAttachMICHMACMatchesIndependentComputation(c *C) {
 	}
 }
 
-// TestNtlmAttachMICRejectsNegotiateVersion checks that ntlmAttachMIC refuses
-// to proceed when the AUTHENTICATE_MESSAGE's NegotiateFlags (bytes [60:64],
-// inside the region this function already requires present) carries
-// NTLMSSP_NEGOTIATE_VERSION. The fixed 64-byte header offsets this function
-// relies on don't account for the optional 8-byte Version block that flag
-// implies (MS-NLMP §2.2.2.5); today's Azure/go-ntlmssp never sets it, but if
-// it ever did, trusting the 64-byte layout would silently splice the MIC and
-// rewrite BufferOffsets at the wrong byte positions rather than erroring out.
-func (s *WinRMSuite) TestNtlmAttachMICRejectsNegotiateVersion(c *C) {
+// TestNtlmInsertVersionAddsVersionBlock checks that ntlmInsertVersion adds
+// the optional Version block and NTLMSSP_NEGOTIATE_VERSION flag only when
+// the CHALLENGE_MESSAGE negotiated it, and that ntlmAttachMIC then correctly
+// splices the MIC after the Version block (at offset 72, not the usual 64)
+// instead of rejecting the token outright. Some real-world WinRM/NTLM
+// servers reject an AUTHENTICATE_MESSAGE that negotiates
+// NTLMSSP_NEGOTIATE_VERSION in the CHALLENGE but omits the block anyway —
+// confirmed against a real Windows Server target (rejected with
+// SEC_E_INVALID_TOKEN, 0x80090308).
+func (s *WinRMSuite) TestNtlmInsertVersionAddsVersionBlock(c *C) {
+	authenticateToken := ntlmMicBuildSyntheticAuthenticateToken(48)
+	originalLen := len(authenticateToken)
+
+	unchanged, err := ntlmInsertVersion(authenticateToken, 0x00000005)
+	c.Assert(err, IsNil)
+	c.Assert(unchanged, DeepEquals, authenticateToken)
+
+	withVersion, err := ntlmInsertVersion(authenticateToken, ntlmNegotiateVersion)
+	c.Assert(err, IsNil)
+	c.Assert(len(withVersion), Equals, originalLen+8)
+
+	flags := binary.LittleEndian.Uint32(withVersion[60:64])
+	c.Assert(flags&ntlmNegotiateVersion, Equals, uint32(ntlmNegotiateVersion))
+	c.Assert(withVersion[64:72], DeepEquals, ntlmVersionBlock[:])
+
+	for _, pos := range ntlmMicVarFieldPositions {
+		originalOffset := binary.LittleEndian.Uint32(authenticateToken[pos.offsetPos : pos.offsetPos+4])
+		newOffset := binary.LittleEndian.Uint32(withVersion[pos.offsetPos : pos.offsetPos+4])
+		c.Assert(newOffset, Equals, originalOffset+8)
+	}
+
 	negotiateToken := []byte("negotiate-token-fixture")
 	challengeToken := []byte("challenge-token-fixture-bytes")
 	exportedSessionKey := []byte("0123456789abcdef")
 
-	authenticateToken := ntlmMicBuildSyntheticAuthenticateToken(48)
-	binary.LittleEndian.PutUint32(authenticateToken[60:64], 0x00000005|ntlmNegotiateVersion)
+	micToken, err := ntlmAttachMIC(negotiateToken, challengeToken, withVersion, exportedSessionKey)
+	c.Assert(err, IsNil)
+	c.Assert(len(micToken), Equals, len(withVersion)+16)
+	c.Assert(micToken[64:72], DeepEquals, ntlmVersionBlock[:])
 
-	_, err := ntlmAttachMIC(negotiateToken, challengeToken, authenticateToken, exportedSessionKey)
-	c.Assert(err, ErrorMatches, ".*NTLMSSP_NEGOTIATE_VERSION.*")
+	allZero := true
+	for _, b := range micToken[72:88] {
+		if b != 0 {
+			allZero = false
+			break
+		}
+	}
+	c.Assert(allZero, Equals, false)
+
+	for _, pos := range ntlmMicVarFieldPositions {
+		originalOffset := binary.LittleEndian.Uint32(authenticateToken[pos.offsetPos : pos.offsetPos+4])
+		newOffset := binary.LittleEndian.Uint32(micToken[pos.offsetPos : pos.offsetPos+4])
+		c.Assert(newOffset, Equals, originalOffset+8+16)
+	}
 }
