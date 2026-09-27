@@ -124,7 +124,7 @@ func (c *ClientKerberos) getKerberosClient() (*client.Client, error) {
 	}
 
 	if c.KrbCCache != "" {
-		cacheBytes, err := os.ReadFile(c.KrbCCache) //nolint:gosec // KrbCCache is a caller-supplied configuration path, not untrusted input.
+		cacheBytes, err := os.ReadFile(c.KrbCCache)
 		if err != nil {
 			return nil, fmt.Errorf("read Kerberos credential cache %q: %w", c.KrbCCache, err)
 		}
