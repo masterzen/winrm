@@ -1,44 +1,51 @@
+version: "2"
 run:
-  go: "1.21"
-  deadline: 10m
+  go: "1.24"
   allow-parallel-runners: true
 linters:
-  disable-all: true
+  default: none
   enable:
-    # Default linters
-    - deadcode
-    - errcheck
-    - gosimple
-    - govet
-    - ineffassign
-    - staticcheck
-    - structcheck
-    - typecheck
-    - unused
-    - varcheck
-    # Optional linters
     - asciicheck
     - bidichk
     - bodyclose
     - containedctx
     - contextcheck
     - durationcheck
+    - errcheck
     - errchkjson
     - errname
     - errorlint
-    - exportloopref
     - gosec
+    - govet
+    - ineffassign
     - misspell
     - noctx
     - nolintlint
     - revive
-    - stylecheck
+    - staticcheck
+    - unused
     - whitespace
-linters-settings:
-  revive:
-    ignore-generated-header: true
-    severity: error
-  staticcheck:
-    go: "1.21"
-  stylecheck:
-    go: "1.21"
+  settings:
+    revive:
+      severity: error
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

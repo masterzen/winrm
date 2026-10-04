@@ -1,0 +1,192 @@
+package winrm
+
+import (
+	"crypto/rand"
+	"crypto/rc4" //nolint:gosec // RC4 sealing is mandated by MS-NLMP §3.4 NTLM message confidentiality.
+
+	"slices"
+
+	. "gopkg.in/check.v1"
+)
+
+// TestNTLMSealUnsealRoundTrip checks that messages sealed with the client
+// key are correctly unsealed with the matching server-derived key, and that
+// the persistent cipher state (MS-NLMP CONNECTION mode) stays in sync across
+// multiple messages on the same session, as ClientNTLM's sealing transport
+// relies on.
+func (s *WinRMSuite) TestNTLMSealUnsealRoundTrip(c *C) {
+	sessionKey := make([]byte, 16)
+	_, err := rand.Read(sessionKey)
+	c.Assert(err, IsNil)
+
+	clientCipher, err := rc4.NewCipher(sealKeyForStrength(ntlmKey128Bit, sessionKey, ntlmClientToServerSealing)) //nolint:gosec // RC4 sealing is mandated by MS-NLMP §3.4 NTLM message confidentiality.
+	c.Assert(err, IsNil)
+	clientSignKey := deriveClientSignKey(sessionKey)
+
+	serverCipher, err := rc4.NewCipher(sealKeyForStrength(ntlmKey128Bit, sessionKey, ntlmClientToServerSealing)) //nolint:gosec // RC4 sealing is mandated by MS-NLMP §3.4 NTLM message confidentiality.
+	c.Assert(err, IsNil)
+
+	for seq, plaintext := range []string{"first message", "second message, same session"} {
+		ciphertext, sig := sealMessage(clientCipher, clientSignKey, uint32(seq), []byte(plaintext), true)
+		c.Assert(ciphertext, Not(DeepEquals), []byte(plaintext))
+
+		decrypted, err := unsealMessage(serverCipher, clientSignKey, sig, ciphertext, true)
+		c.Assert(err, IsNil)
+		c.Assert(string(decrypted), Equals, plaintext)
+	}
+}
+
+// TestNTLMUnsealDetectsTampering checks that a modified ciphertext or
+// signature is rejected rather than silently returning corrupted plaintext.
+func (s *WinRMSuite) TestNTLMUnsealDetectsTampering(c *C) {
+	sessionKey := make([]byte, 16)
+	_, err := rand.Read(sessionKey)
+	c.Assert(err, IsNil)
+	signKey := deriveClientSignKey(sessionKey)
+
+	seal := func() (ciphertext, sig []byte) {
+		cipher, err := rc4.NewCipher(sealKeyForStrength(ntlmKey128Bit, sessionKey, ntlmClientToServerSealing)) //nolint:gosec // RC4 sealing is mandated by MS-NLMP §3.4 NTLM message confidentiality.
+		c.Assert(err, IsNil)
+		return sealMessage(cipher, signKey, 0, []byte("hello winrm"), true)
+	}
+
+	ciphertext, sig := seal()
+	tamperedCiphertext := append([]byte(nil), ciphertext...)
+	tamperedCiphertext[0] ^= 0xFF
+	cipher, err := rc4.NewCipher(sealKeyForStrength(ntlmKey128Bit, sessionKey, ntlmClientToServerSealing)) //nolint:gosec // RC4 sealing is mandated by MS-NLMP §3.4 NTLM message confidentiality.
+	c.Assert(err, IsNil)
+	_, err = unsealMessage(cipher, signKey, sig, tamperedCiphertext, true)
+	c.Assert(err, ErrorMatches, "ntlmssp: signature mismatch")
+
+	ciphertext, sig = seal()
+	tamperedSig := slices.Clone(sig)
+	tamperedSig[0] ^= 0xFF
+	cipher, err = rc4.NewCipher(sealKeyForStrength(ntlmKey128Bit, sessionKey, ntlmClientToServerSealing)) //nolint:gosec // RC4 sealing is mandated by MS-NLMP §3.4 NTLM message confidentiality.
+	c.Assert(err, IsNil)
+	_, err = unsealMessage(cipher, signKey, tamperedSig, ciphertext, true)
+	c.Assert(err, ErrorMatches, "ntlmssp: signature mismatch")
+}
+
+// TestNTLMSealUnsealRoundTripWithoutKeyExch checks that sealMessage and
+// unsealMessage still interoperate when keyExch is false, as MS-NLMP
+// §3.4.4.2 requires for a server that grants NTLMSSP_NEGOTIATE_SEAL without
+// NTLMSSP_NEGOTIATE_KEY_EXCH: the signature checksum must round-trip
+// unencrypted, not just when it's RC4-encrypted.
+func (s *WinRMSuite) TestNTLMSealUnsealRoundTripWithoutKeyExch(c *C) {
+	sessionKey := make([]byte, 16)
+	_, err := rand.Read(sessionKey)
+	c.Assert(err, IsNil)
+
+	clientCipher, err := rc4.NewCipher(sealKeyForStrength(ntlmKey128Bit, sessionKey, ntlmClientToServerSealing)) //nolint:gosec // RC4 sealing is mandated by MS-NLMP §3.4 NTLM message confidentiality.
+	c.Assert(err, IsNil)
+	clientSignKey := deriveClientSignKey(sessionKey)
+
+	serverCipher, err := rc4.NewCipher(sealKeyForStrength(ntlmKey128Bit, sessionKey, ntlmClientToServerSealing)) //nolint:gosec // RC4 sealing is mandated by MS-NLMP §3.4 NTLM message confidentiality.
+	c.Assert(err, IsNil)
+
+	ciphertext, sig := sealMessage(clientCipher, clientSignKey, 0, []byte("hello winrm"), false)
+	c.Assert(ciphertext, Not(DeepEquals), []byte("hello winrm"))
+
+	decrypted, err := unsealMessage(serverCipher, clientSignKey, sig, ciphertext, false)
+	c.Assert(err, IsNil)
+	c.Assert(string(decrypted), Equals, "hello winrm")
+}
+
+// TestNTLMSignEncryptsChecksumOnlyWhenKeyExchGranted checks that ntlmSign's
+// checksum bytes match the plain (unencrypted) HMAC-MD5 checksum when
+// keyExch is false, and differ from it when keyExch is true — the concrete
+// behavior MS-NLMP §3.4.4.2 requires: a server can grant
+// NTLMSSP_NEGOTIATE_SEAL without granting NTLMSSP_NEGOTIATE_KEY_EXCH, and
+// the checksum must stay unencrypted in that case.
+func (s *WinRMSuite) TestNTLMSignEncryptsChecksumOnlyWhenKeyExchGranted(c *C) {
+	sessionKey := make([]byte, 16)
+	_, err := rand.Read(sessionKey)
+	c.Assert(err, IsNil)
+	signKey := deriveClientSignKey(sessionKey)
+	seq := ntlmSeqBytes(0)
+	plaintext := []byte("hello winrm")
+
+	plainChecksum := ntlmHmacMd5(signKey, append(append([]byte(nil), seq...), plaintext...))[:8]
+
+	noKeyExchCipher, err := rc4.NewCipher(sealKeyForStrength(ntlmKey128Bit, sessionKey, ntlmClientToServerSealing)) //nolint:gosec // RC4 sealing is mandated by MS-NLMP §3.4 NTLM message confidentiality.
+	c.Assert(err, IsNil)
+	sigWithoutKeyExch := ntlmSign(noKeyExchCipher, signKey, seq, plaintext, false)
+	c.Assert(sigWithoutKeyExch[4:12], DeepEquals, plainChecksum)
+
+	keyExchCipher, err := rc4.NewCipher(sealKeyForStrength(ntlmKey128Bit, sessionKey, ntlmClientToServerSealing)) //nolint:gosec // RC4 sealing is mandated by MS-NLMP §3.4 NTLM message confidentiality.
+	c.Assert(err, IsNil)
+	sigWithKeyExch := ntlmSign(keyExchCipher, signKey, seq, plaintext, true)
+	c.Assert(sigWithKeyExch[4:12], Not(DeepEquals), plainChecksum)
+}
+
+// TestNTLMDeriveKeysAreDistinct checks that the four MS-NLMP 3.4.5 derived
+// keys don't collide with each other, since sealing the wrong direction with
+// the wrong key would silently produce garbage.
+func (s *WinRMSuite) TestNTLMDeriveKeysAreDistinct(c *C) {
+	sessionKey := []byte("0123456789abcdef")
+
+	keys := [][]byte{
+		deriveClientSignKey(sessionKey),
+		sealKeyForStrength(ntlmKey128Bit, sessionKey, ntlmClientToServerSealing),
+		deriveServerSignKey(sessionKey),
+		sealKeyForStrength(ntlmKey128Bit, sessionKey, ntlmServerToClientSealing),
+	}
+	for i := range keys {
+		c.Assert(keys[i], HasLen, 16)
+		for j := range keys {
+			if i != j {
+				c.Assert(keys[i], Not(DeepEquals), keys[j])
+			}
+		}
+	}
+}
+
+// TestSealKeyForStrength128BitMatchesNtlmDerivedKey checks that
+// sealKeyForStrength's 128-bit output is byte-identical to calling
+// ntlmDerivedKey directly on the full session key — a regression check that
+// commit 2's 128-bit-only behavior is unchanged now that sealKeyForStrength
+// mediates key derivation.
+func (s *WinRMSuite) TestSealKeyForStrength128BitMatchesNtlmDerivedKey(c *C) {
+	sessionKey := []byte("0123456789abcdef")
+
+	got := sealKeyForStrength(ntlmKey128Bit, sessionKey, ntlmClientToServerSealing)
+	want := ntlmDerivedKey(sessionKey, ntlmClientToServerSealing)
+	c.Assert(got, DeepEquals, want)
+}
+
+// TestSealKeyForStrength56BitTruncatesSessionKey checks that the 56-bit
+// strength hashes only the first 7 bytes of the session key before the magic
+// constant, matching bodgit/ntlmssp's sealKey() formula exactly.
+func (s *WinRMSuite) TestSealKeyForStrength56BitTruncatesSessionKey(c *C) {
+	sessionKey := []byte("0123456789abcdef")
+
+	got := sealKeyForStrength(ntlmKey56Bit, sessionKey, ntlmClientToServerSealing)
+	want := ntlmDerivedKey(sessionKey[:7], ntlmClientToServerSealing)
+	c.Assert(got, DeepEquals, want)
+}
+
+// TestSealKeyForStrength40BitTruncatesSessionKey checks that the 40-bit
+// strength hashes only the first 5 bytes of the session key before the magic
+// constant, matching bodgit/ntlmssp's sealKey() formula exactly.
+func (s *WinRMSuite) TestSealKeyForStrength40BitTruncatesSessionKey(c *C) {
+	sessionKey := []byte("0123456789abcdef")
+
+	got := sealKeyForStrength(ntlmKey40Bit, sessionKey, ntlmClientToServerSealing)
+	want := ntlmDerivedKey(sessionKey[:5], ntlmClientToServerSealing)
+	c.Assert(got, DeepEquals, want)
+}
+
+// TestSealKeyForStrengthsProduceDifferentOutput checks that all three key
+// strengths derive different sealing keys from the same session key, since a
+// collision would silently weaken (or misclassify) the negotiated strength.
+func (s *WinRMSuite) TestSealKeyForStrengthsProduceDifferentOutput(c *C) {
+	sessionKey := []byte("0123456789abcdef")
+
+	key128 := sealKeyForStrength(ntlmKey128Bit, sessionKey, ntlmClientToServerSealing)
+	key56 := sealKeyForStrength(ntlmKey56Bit, sessionKey, ntlmClientToServerSealing)
+	key40 := sealKeyForStrength(ntlmKey40Bit, sessionKey, ntlmClientToServerSealing)
+
+	c.Assert(key128, Not(DeepEquals), key56)
+	c.Assert(key128, Not(DeepEquals), key40)
+	c.Assert(key56, Not(DeepEquals), key40)
+}

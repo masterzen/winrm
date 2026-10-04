@@ -46,7 +46,6 @@ func (ep *Endpoint) url() string {
 	}
 
 	return u.String()
-
 }
 
 // NewEndpoint returns new pointer to struct Endpoint, with a default 60s response header timeout

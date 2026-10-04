@@ -31,8 +31,8 @@ func (e *ExecuteCommandError) Is(err error) bool {
 	return ok
 }
 
-func (b *ExecuteCommandError) Unwrap() error {
-	return b.Inner
+func (e *ExecuteCommandError) Unwrap() error {
+	return e.Inner
 }
 
 func first(node tree.Node, xpath string) (string, error) {
@@ -117,6 +117,10 @@ func ParseSlurpOutputErrResponse(response string, stdout, stderr io.Writer) (boo
 		exitCode int
 	)
 
+	if response == "" {
+		return false, 0, nil
+	}
+
 	doc, err := xmltree.ParseXML(strings.NewReader(response))
 	if err != nil {
 		return false, 0, err
@@ -155,7 +159,14 @@ func ParseSlurpOutputResponse(response string, stream io.Writer, streamType stri
 		exitCode int
 	)
 
+	if response == "" {
+		return false, 0, nil
+	}
+
 	doc, err := xmltree.ParseXML(strings.NewReader(response))
+	if err != nil {
+		return false, 0, err
+	}
 
 	nodes, _ := xPath(doc, fmt.Sprintf("//rsp:Stream[@Name='%s']", streamType))
 	for _, node := range nodes {

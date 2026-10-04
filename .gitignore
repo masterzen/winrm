@@ -26,3 +26,9 @@ _testmain.go
 
 *.coverprofile
 *.cov
+
+# Real integration test credentials — never commit.
+integrationTest/.env.integration
+
+mise.toml
+krb5.conf

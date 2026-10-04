@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/url"
 	"strings"
@@ -74,6 +75,15 @@ func newCommandReader(stream string, command *Command) *commandReader {
 }
 
 func fetchOutput(ctx context.Context, command *Command) {
+	defer func() {
+		if r := recover(); r != nil {
+			err := fmt.Errorf("recovered from panic: %+v", r)
+			command.Stderr.write.CloseWithError(err)
+			command.Stdout.write.CloseWithError(err)
+			close(command.done)
+		}
+	}()
+
 	ctxDone := ctx.Done()
 	for {
 		select {
@@ -101,13 +111,13 @@ func fetchOutput(ctx context.Context, command *Command) {
 
 func (c *Command) check() error {
 	if c.id == "" {
-		return errors.New("Command has already been closed")
+		return errors.New("command has already been closed")
 	}
 	if c.shell == nil {
-		return errors.New("Command has no associated shell")
+		return errors.New("command has no associated shell")
 	}
 	if c.client == nil {
-		return errors.New("Command has no associated client")
+		return errors.New("command has no associated client")
 	}
 	return nil
 }
@@ -229,7 +239,7 @@ func (w *commandWriter) Write(data []byte) (int, error) {
 	origLen := len(data)
 	for len(data) > 0 {
 		// never send more data than our EnvelopeSize.
-		n := min(w.client.Parameters.EnvelopeSize-1000, len(data))
+		n := min(w.client.EnvelopeSize-1000, len(data))
 		if err := w.sendInput(data[:n], false); err != nil {
 			break
 		}

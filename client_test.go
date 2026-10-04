@@ -2,6 +2,7 @@ package winrm
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"net/http"
 	"strings"
@@ -25,16 +26,23 @@ func (r *Requester) Post(client *Client, request *soap.SoapMessage) (string, err
 }
 
 func (r *Requester) Transport(endpoint *Endpoint) error {
+	dial := r.dial
+	if dial == nil {
+		dial = (&net.Dialer{}).Dial
+	}
+
 	//nolint:gosec
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: endpoint.Insecure,
 		},
 		ResponseHeaderTimeout: endpoint.Timeout,
-		Dial:                  r.dial,
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return dial(network, addr)
+		},
 	}
 
-	if endpoint.CACert != nil && len(endpoint.CACert) > 0 {
+	if len(endpoint.CACert) > 0 {
 		certPool, err := readCACerts(endpoint.CACert)
 		if err != nil {
 			return err

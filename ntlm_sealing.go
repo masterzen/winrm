@@ -1,0 +1,122 @@
+package winrm
+
+import (
+	"crypto/hmac"
+	"crypto/md5" //nolint:gosec
+	"crypto/rc4" //nolint:gosec // RC4 sealing is mandated by MS-NLMP §3.4 NTLM message confidentiality.
+	"errors"
+	"slices"
+)
+
+// NTLM signing/sealing key derivation magic constants (MS-NLMP §3.4.5).
+const (
+	ntlmClientToServerSigning = "session key to client-to-server signing key magic constant"
+	ntlmClientToServerSealing = "session key to client-to-server sealing key magic constant"
+	ntlmServerToClientSigning = "session key to server-to-client signing key magic constant"
+	ntlmServerToClientSealing = "session key to server-to-client sealing key magic constant"
+	ntlmVersionMagic          = "\x01\x00\x00\x00"
+)
+
+// deriveClientSignKey derives the client-to-server signing key from the exported session key (MS-NLMP §3.4.5.2).
+func deriveClientSignKey(sessionKey []byte) []byte {
+	return ntlmDerivedKey(sessionKey, ntlmClientToServerSigning)
+}
+
+// deriveServerSignKey derives the server-to-client signing key from the exported session key (MS-NLMP §3.4.5.2).
+func deriveServerSignKey(sessionKey []byte) []byte {
+	return ntlmDerivedKey(sessionKey, ntlmServerToClientSigning)
+}
+
+// sealMessage encrypts plaintext using the RC4 sealing cipher and computes the
+// NTLMSSP_MESSAGE_SIGNATURE for it (MS-NLMP §3.4.3, §3.4.4).
+//
+// cipher must be the caller's persistent client (or server) sealing cipher. Its
+// internal state advances with each call, so the same cipher must be reused in
+// order for every message in the session (MS-NLMP §3.4 CONNECTION mode).
+// seqNum is the zero-based sequence number of this message and must increment by
+// one for every message sealed with this cipher. keyExch must be true only when
+// the server's CHALLENGE_MESSAGE granted NTLMSSP_NEGOTIATE_KEY_EXCH (MS-NLMP
+// §3.4.4.2); see ntlmSign.
+func sealMessage(cipher *rc4.Cipher, signKey []byte, seqNum uint32, plaintext []byte, keyExch bool) (ciphertext, signature []byte) {
+	seq := ntlmSeqBytes(seqNum)
+	ciphertext = make([]byte, len(plaintext))
+	cipher.XORKeyStream(ciphertext, plaintext)
+	signature = ntlmSign(cipher, signKey, seq, plaintext, keyExch)
+	return ciphertext, signature
+}
+
+// unsealMessage decrypts ciphertext using the RC4 sealing cipher and verifies it
+// against signature (MS-NLMP §3.4.3, §3.4.4).
+//
+// cipher must be the caller's persistent sealing cipher for the sender, used in
+// CONNECTION mode (see sealMessage). keyExch must match the value the sender
+// used to seal the message (see ntlmSign). returns an error if signature does
+// not match.
+func unsealMessage(cipher *rc4.Cipher, signKey []byte, signature, ciphertext []byte, keyExch bool) ([]byte, error) {
+	if len(signature) != 16 {
+		return nil, errors.New("ntlmssp: signature must be 16 bytes")
+	}
+	plaintext := make([]byte, len(ciphertext))
+	cipher.XORKeyStream(plaintext, ciphertext)
+	expected := ntlmSign(cipher, signKey, signature[12:16], plaintext, keyExch)
+	if !hmac.Equal(signature, expected) {
+		return nil, errors.New("ntlmssp: signature mismatch")
+	}
+	return plaintext, nil
+}
+
+// sealKeyForStrength derives the sealing key for the given negotiated key
+// strength (MS-NLMP §3.4.5.3): 128-bit hashes the full exported session key;
+// 56-bit and 40-bit hash a truncated prefix of it before the magic constant —
+// matching bodgit/ntlmssp's sealKey() exactly:
+//
+//	ExtendedSessionSecurity && Negotiate128 -> MD5(sessionKey || constant)
+//	ExtendedSessionSecurity && Negotiate56  -> MD5(sessionKey[:7] || constant)
+//	ExtendedSessionSecurity (neither flag)  -> MD5(sessionKey[:5] || constant)
+func sealKeyForStrength(strength ntlmKeyStrength, sessionKey []byte, magicConstant string) []byte {
+	switch strength {
+	case ntlmKey56Bit:
+		return ntlmDerivedKey(sessionKey[:7], magicConstant)
+	case ntlmKey40Bit:
+		return ntlmDerivedKey(sessionKey[:5], magicConstant)
+	default: // ntlmKey128Bit
+		return ntlmDerivedKey(sessionKey, magicConstant)
+	}
+}
+
+func ntlmDerivedKey(sessionKey []byte, magicConstant string) []byte {
+	keyIn := slices.Concat(sessionKey, append([]byte(magicConstant), 0))
+	sum := md5.Sum(keyIn) //nolint:gosec
+	return sum[:]
+}
+
+func ntlmSeqBytes(seqNum uint32) []byte {
+	return []byte{byte(seqNum), byte(seqNum >> 8), byte(seqNum >> 16), byte(seqNum >> 24)} //nolint:gosec // little-endian byte extraction, not a truncating conversion.
+}
+
+// ntlmSign computes the NTLMSSP_MESSAGE_SIGNATURE checksum for plaintext
+// (MS-NLMP §3.4.4.2).
+//
+// keyExch selects whether the checksum is RC4-encrypted: MS-NLMP §3.4.4.2
+// requires this only when the server's CHALLENGE_MESSAGE granted
+// NTLMSSP_NEGOTIATE_KEY_EXCH. A server can grant NTLMSSP_NEGOTIATE_SEAL
+// without granting key exchange, so callers must not assume keyExch is
+// always true. When keyExch is false, the checksum is sent as-is and
+// sealCipher's stream is not advanced for it.
+func ntlmSign(sealCipher *rc4.Cipher, signKey []byte, seq []byte, plaintext []byte, keyExch bool) []byte {
+	checksum := ntlmHmacMd5(signKey, append(seq, plaintext...))[:8]
+	if !keyExch {
+		return append(append([]byte(ntlmVersionMagic), checksum...), seq...)
+	}
+	encHmac := make([]byte, 8)
+	sealCipher.XORKeyStream(encHmac, checksum)
+	return append(append([]byte(ntlmVersionMagic), encHmac...), seq...)
+}
+
+func ntlmHmacMd5(key []byte, data ...[]byte) []byte {
+	h := hmac.New(md5.New, key)
+	for _, d := range data {
+		h.Write(d)
+	}
+	return h.Sum(nil)
+}

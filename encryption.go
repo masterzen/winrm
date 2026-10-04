@@ -2,437 +2,301 @@ package winrm
 
 import (
 	"bytes"
-	"encoding/binary"
+	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
-	"strconv"
 	"strings"
+	"sync"
 
-	"github.com/bodgit/ntlmssp"
-	ntlmhttp "github.com/bodgit/ntlmssp/http"
 	"github.com/masterzen/winrm/soap"
 )
 
+// errNTLMReauthRequired signals that the server rejected an encrypted NTLM
+// request as unauthenticated (HTTP 401), typically because the connection
+// that carried the NTLM authentication state was dropped and re-dialed. It
+// triggers a one-shot re-handshake, mirroring errCredSSPReauthRequired
+// (credssp.go).
+var errNTLMReauthRequired = errors.New("NTLM re-authentication required")
+
+// Encryption is a WinRM message-encryption transport selected by protocol
+// (MS-WSMV §2.2.9.1). NTLM negotiates an azureNTLMSecuritySession (MS-NLMP
+// §3.4, ntlm_security_session.go) directly over HTTP and wraps/unwraps
+// message bodies through the shared messageProtector-based MIME framing in
+// message_encryption.go. Kerberos delegates entirely to ClientKerberos,
+// which owns the Kerberos security context. CredSSP has its own dedicated
+// transport, ClientCredSSP (credssp.go): its ongoing message encryption is
+// genuine TLS application data (not an NTLM-style Wrap/Unwrap), driven
+// through a credsspMessageProtector built from the TLS tunnel established by
+// performCredSSPAuth -- it never goes through this type. NTLM-style sealing
+// is used only for CredSSP's pubKeyAuth handshake step, a separate code path
+// in credssp.go.
 type Encryption struct {
-	ntlm           *ClientNTLM
-	protocol       string
-	protocolString []byte
-	httpClient     *http.Client
-	ntlmClient     *ntlmssp.Client
-	ntlmhttp       *ntlmhttp.Client
+	ntlm              *ClientNTLM
+	kerberos          *ClientKerberos
+	raw               clientRequest
+	protocol          string
+	protocolString    []byte
+	httpClient        *http.Client
+	messageEncryption *winRMMessageEncryption
+
+	// mu serializes Post's NTLM negotiate/request/retry sequence. Different
+	// goroutines can call Post concurrently on the same Encryption; without
+	// this lock they can race on messageEncryption's sequence numbers and on
+	// winRMMessageEncryption.multipart.
+	mu sync.Mutex
+
+	// ntlmKeyExchangeOptions controls the minimum NTLM key strength accepted
+	// when establishing an azureNTLMSecuritySession. The zero value accepts
+	// whatever the server negotiates, matching bodgit/ntlmssp's historical
+	// default.
+	ntlmKeyExchangeOptions NTLMKeyExchangeOptions
 }
 
-const (
-	sixTenKB       = 16384
-	mimeBoundary   = "--Encrypted Boundary"
-	defaultCipher  = "RC4-HMAC-NTLM"
-	boundaryLength = len(mimeBoundary)
-)
-
-/*
-Encrypted Message Types
-When using Encryption, there are three options available
-
- 1. Negotiate/SPNEGO
-
- 2. Kerberos
-
- 3. CredSSP
-
-    protocol: The protocol string used for the particular auth protocol
-
-    The auth protocol used, will determine the wrapping and unwrapping method plus
-    the protocol string to use. Currently only NTLM is supported
-
-    based on the python code from https://pypi.org/project/pywinrm/
-
-    see https://github.com/diyan/pywinrm/blob/master/winrm/encryption.py
-
-    uses the most excellent NTLM library from https://github.com/bodgit/ntlmssp
-*/
+// NewEncryption creates a WinRM message-encryption transport for protocol.
+// Supported protocols are "ntlm" and "kerberos". CredSSP has its own
+// dedicated transport, ClientCredSSP (credssp.go), and is not constructed
+// through this function. For Kerberos, use NewEncryptionWithSettings when
+// possible so the authentication configuration is installed before the
+// transport is initialized.
 func NewEncryption(protocol string) (*Encryption, error) {
-	encryption := &Encryption{
-		ntlm:     &ClientNTLM{},
-		protocol: protocol,
+	if protocol == "kerberos" {
+		return nil, fmt.Errorf("kerberos encryption requires realm, SPN, and credentials; use NewEncryptionWithSettings instead")
 	}
+	return NewEncryptionWithSettings(protocol, nil)
+}
 
+// NewEncryptionWithSettings creates a protocol-selected WinRM message-
+// encryption transport and applies the supplied authentication settings.
+func NewEncryptionWithSettings(protocol string, settings *Settings) (*Encryption, error) {
 	switch protocol {
 	case "ntlm":
-		encryption.protocolString = []byte("application/HTTP-SPNEGO-session-encrypted")
-		return encryption, nil
-		/* credssp and kerberos is currently unimplemented, leave holder for future to keep in sync with python implementation
-		case "credssp":
-			encryption.protocolString = []byte("application/HTTP-CredSSP-session-encrypted")
-		case "kerberos": // kerberos is currently unimplemented, leave holder for future to keep in sync with python implementation
-			encryption.protocolString = []byte("application/HTTP-SPNEGO-session-encrypted")
-		*/
+		var ntlmKeyExchangeOptions NTLMKeyExchangeOptions
+		if settings != nil {
+			ntlmKeyExchangeOptions = settings.NTLMKeyExchangeOptions
+		}
+		return &Encryption{
+			ntlm:                   &ClientNTLM{},
+			protocol:               protocol,
+			protocolString:         []byte("application/HTTP-SPNEGO-session-encrypted"),
+			ntlmKeyExchangeOptions: ntlmKeyExchangeOptions,
+		}, nil
+	case "kerberos":
+		kerberos := &ClientKerberos{}
+		if settings != nil {
+			kerberos = NewClientKerberos(settings)
+		}
+		return &Encryption{
+			kerberos:       kerberos,
+			protocol:       protocol,
+			protocolString: []byte("application/HTTP-SPNEGO-session-encrypted"),
+		}, nil
+	default:
+		return nil, fmt.Errorf("encryption for protocol %q not supported", protocol)
 	}
-
-	return nil, fmt.Errorf("Encryption for protocol '%s' not supported", protocol)
 }
 
 func (e *Encryption) Transport(endpoint *Endpoint) error {
-	e.httpClient = &http.Client{}
-	return e.ntlm.Transport(endpoint)
-}
-
-func (e *Encryption) Post(client *Client, message *soap.SoapMessage) (string, error) {
-	var userName, domain string
-	if strings.Contains(client.username, "@") {
-		parts := strings.Split(client.username, "@")
-		domain = parts[1]
-		userName = parts[0]
-	} else if strings.Contains(client.username, "\\") {
-		parts := strings.Split(client.username, "\\")
-		domain = parts[0]
-		userName = parts[1]
-	} else {
-		userName = client.username
+	if e.protocol == "kerberos" {
+		if e.kerberos == nil {
+			return fmt.Errorf("kerberos encryption transport is not configured")
+		}
+		return e.kerberos.Transport(endpoint)
 	}
-
-	e.ntlmClient, _ = ntlmssp.NewClient(ntlmssp.SetUserInfo(userName, client.password), ntlmssp.SetDomain(domain), ntlmssp.SetVersion(ntlmssp.DefaultVersion()))
-	e.ntlmhttp, _ = ntlmhttp.NewClient(e.httpClient, e.ntlmClient)
-
-	var err error
-	if err = e.PrepareRequest(client, client.url); err == nil {
-		return e.PrepareEncryptedRequest(client, client.url, []byte(message.String()))
-	} else {
-		return e.ntlm.Post(client, message)
-	}
-}
-
-func (e *Encryption) PrepareRequest(client *Client, endpoint string) error {
-	req, err := http.NewRequest("POST", endpoint, nil)
-	if err != nil {
+	if err := e.ntlm.Transport(endpoint); err != nil {
 		return err
 	}
-
-	req.Header.Set("User-Agent", "WinRM client")
-	req.Header.Set("Content-Length", "0")
-	req.Header.Set("Content-Type", "application/soap+xml;charset=UTF-8")
-	req.Header.Set("Connection", "Keep-Alive")
-
-	resp, err := e.ntlmhttp.Do(req)
-	if err != nil {
-		return fmt.Errorf("unknown error %w", err)
+	// e.ntlm's Transport call dials and configures the connection (proxy,
+	// TLS); e.raw.dial and e.raw.proxyfunc below reuse that same dial/proxy
+	// setup for e.raw, a second, plain *http.Transport. e.httpClient (built
+	// from e.raw) drives the Azure-based NTLM negotiate/challenge/
+	// authenticate handshake and the already-sealed encrypted requests
+	// directly, via manual Authorization header handling rather than a
+	// RoundTripper middleware.
+	e.raw.dial = e.ntlm.dial
+	e.raw.proxyfunc = e.ntlm.proxyfunc
+	if err := e.raw.Transport(endpoint); err != nil {
+		return err
 	}
-
-	if _, err := io.ReadAll(resp.Body); err != nil {
-		return fmt.Errorf("read response body: %w", err)
-	}
-
-	if err := resp.Body.Close(); err != nil {
-		return fmt.Errorf("close request body: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("http error %d", resp.StatusCode)
-	}
-
+	e.httpClient = &http.Client{Transport: e.raw.transport}
 	return nil
 }
 
-/*
-Creates a prepared request to send to the server with an encrypted message
-and correct headers
-
-:param endpoint: The endpoint/server to prepare requests to
-:param message: The unencrypted message to send to the server
-:return: A prepared request that has an decrypted message
-*/
-func (e *Encryption) PrepareEncryptedRequest(client *Client, endpoint string, message []byte) (string, error) {
-	url, err := url.Parse(endpoint)
-	if err != nil {
-		return "", err
+func (e *Encryption) Post(client *Client, message *soap.SoapMessage) (string, error) {
+	if e.protocol == "kerberos" {
+		if e.kerberos == nil {
+			return "", fmt.Errorf("kerberos encryption transport is not configured")
+		}
+		return e.kerberos.Post(client, message)
 	}
-	host := strings.Split(url.Hostname(), ":")[0]
-
-	var content_type string
-	var encrypted_message []byte
-
-	if e.protocol == "credssp" && len(message) > sixTenKB {
-		content_type = "multipart/x-multi-encrypted"
-		encrypted_message = []byte{}
-		message_chunks := [][]byte{}
-		for i := 0; i < len(message); i += sixTenKB {
-			message_chunks = append(message_chunks, message[i:i+sixTenKB])
-		}
-		for _, message_chunk := range message_chunks {
-			encrypted_chunk := e.encryptMessage(message_chunk, host)
-			encrypted_message = append(encrypted_message, encrypted_chunk...)
-		}
-	} else {
-		content_type = "multipart/encrypted"
-		encrypted_message = e.encryptMessage(message, host)
+	if e.httpClient == nil {
+		return "", fmt.Errorf("NTLM encryption transport is not initialized")
 	}
 
-	encrypted_message = append(encrypted_message, []byte(mimeBoundary)...)
-	encrypted_message = append(encrypted_message, []byte("--\r\n")...)
+	e.mu.Lock()
+	defer e.mu.Unlock()
 
-	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer(encrypted_message))
-	if err != nil {
+	if err := e.PrepareRequest(client, client.url); err != nil {
 		return "", err
 	}
 
-	req.Header.Set("User-Agent", "WinRM client")
-	req.Header.Set("Connection", "Keep-Alive")
-	req.Header.Set("Content-Length", fmt.Sprintf("%d", len(encrypted_message)))
-	req.Header.Set("Content-Type", fmt.Sprintf(`%s;protocol="%s";boundary="Encrypted Boundary"`, content_type, e.protocolString))
+	body, err := e.PrepareEncryptedRequest(client, client.url, []byte(message.String()))
+	if err != nil && errors.Is(err, errNTLMReauthRequired) {
+		// The connection that held the NTLM authentication state was lost --
+		// for example the server closed an idle keep-alive connection and the
+		// transport dialed a fresh, unauthenticated socket. Re-run the NTLM
+		// handshake and retry once. A 401 is safe to retry because the server
+		// never processed the encrypted request.
+		if err := e.PrepareRequest(client, client.url); err != nil {
+			return "", err
+		}
+		body, err = e.PrepareEncryptedRequest(client, client.url, []byte(message.String()))
+	}
+	return body, err
+}
 
-	resp, err := e.ntlmhttp.Do(req)
+// PrepareRequest negotiates NTLM message encryption: it runs the NTLM
+// negotiate/challenge/authenticate exchange over endpoint (each leg sent as
+// an Authorization: Negotiate header, MS-NLMP §3.3.1), derives an
+// azureNTLMSecuritySession from the resulting exported session key
+// (MS-NLMP §3.4), and installs it as e.messageEncryption's protector.
+func (e *Encryption) PrepareRequest(client *Client, endpoint string) error {
+	if e.httpClient == nil {
+		return fmt.Errorf("NTLM HTTP client is not initialized")
+	}
+
+	negotiateChallenge := func(negotiateToken []byte) ([]byte, error) {
+		req, err := http.NewRequestWithContext(context.Background(), "POST", endpoint, nil)
+		if err != nil {
+			return nil, err
+		}
+		setWinRMHeaders(req, "application/soap+xml;charset=UTF-8", 0)
+		req.Header.Set("Authorization", "Negotiate "+base64.StdEncoding.EncodeToString(negotiateToken))
+
+		resp, err := e.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("negotiate NTLM message encryption: %w", err)
+		}
+		defer resp.Body.Close()
+		if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+			return nil, fmt.Errorf("read NTLM challenge response: %w", err)
+		}
+		if resp.StatusCode != http.StatusUnauthorized {
+			return nil, fmt.Errorf("NTLM negotiation expected an HTTP 401 challenge, got %d", resp.StatusCode)
+		}
+		challengeToken, err := negotiateResponseToken(resp.Header.Values("WWW-Authenticate"))
+		if err != nil {
+			return nil, fmt.Errorf("read NTLM challenge: %w", err)
+		}
+		return challengeToken, nil
+	}
+
+	authenticateToken, sessionKey, negotiateFlags, err := negotiateAzureNTLMSessionKey(client.username, client.password, negotiateChallenge)
 	if err != nil {
-		return "", fmt.Errorf("unknown error %w", err)
+		return fmt.Errorf("negotiate NTLM message encryption: %w", err)
+	}
+
+	authReq, err := http.NewRequestWithContext(context.Background(), "POST", endpoint, nil)
+	if err != nil {
+		return err
+	}
+	setWinRMHeaders(authReq, "application/soap+xml;charset=UTF-8", 0)
+	authReq.Header.Set("Authorization", "Negotiate "+base64.StdEncoding.EncodeToString(authenticateToken))
+
+	resp, err := e.httpClient.Do(authReq)
+	if err != nil {
+		return fmt.Errorf("complete NTLM message encryption negotiation: %w", err)
+	}
+	defer resp.Body.Close()
+	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+		return fmt.Errorf("read NTLM negotiation response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("NTLM negotiation returned HTTP %d", resp.StatusCode)
+	}
+
+	azureSession, err := newAzureNTLMSecuritySession(sessionKey, negotiateFlags, true, e.ntlmKeyExchangeOptions)
+	if err != nil {
+		return fmt.Errorf("establish NTLM security session: %w", err)
+	}
+	e.messageEncryption, err = newWinRMMessageEncryption("ntlm", azureNTLMMessageProtector{session: azureSession})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (e *Encryption) PrepareEncryptedRequest(_ *Client, endpoint string, message []byte) (string, error) {
+	if e.messageEncryption == nil {
+		return "", fmt.Errorf("NTLM message encryption is not initialized")
+	}
+	encryptedMessage, err := e.messageEncryption.encrypt(message)
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(context.Background(), "POST", endpoint, bytes.NewReader(encryptedMessage))
+	if err != nil {
+		return "", err
+	}
+	setWinRMHeaders(req, e.messageEncryption.contentType(), len(encryptedMessage))
+
+	// The NTLM authentication state (established by PrepareRequest above)
+	// lives on the underlying TCP connection, not in any per-request header,
+	// so this and subsequent encrypted requests are sent unauthenticated on
+	// e.httpClient and rely on connection reuse to stay on that connection.
+	resp, err := e.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("send encrypted NTLM request: %w", err)
+	}
+
+	// A 401 here means the NTLM authentication state tied to this connection
+	// was lost, not that the encrypted message was rejected. Report it as a
+	// reauthentication condition instead of falling through to
+	// ParseEncryptedResponse, which would otherwise return the 401 error page
+	// as if it were the decrypted SOAP response.
+	if resp.StatusCode == http.StatusUnauthorized {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+		return "", errNTLMReauthRequired
 	}
 
 	body, err := e.ParseEncryptedResponse(resp)
-
 	return string(body), err
 }
 
-/*
-Takes in the encrypted response from the server and decrypts it
+func setWinRMHeaders(req *http.Request, contentType string, contentLength int) {
+	req.Header.Set("User-Agent", "WinRM client")
+	req.Header.Set("Connection", "Keep-Alive")
+	req.Header.Set("Content-Type", contentType)
+	req.ContentLength = int64(contentLength)
+}
 
-:param response: The response that needs to be decrytped
-:return: The unencrypted message from the server
-*/
 func (e *Encryption) ParseEncryptedResponse(response *http.Response) ([]byte, error) {
-	contentType := response.Header.Get("Content-Type")
-	if strings.Contains(contentType, fmt.Sprintf(`protocol="%s"`, e.protocolString)) {
-		return e.decryptResponse(response, response.Request.URL.Hostname())
+	if response == nil {
+		return nil, fmt.Errorf("NTLM response is nil")
 	}
-	body, err := io.ReadAll(response.Body)
-	response.Body.Close()
-	if err != nil {
-		return nil, err
+	if e.messageEncryption != nil && strings.Contains(response.Header.Get("Content-Type"), fmt.Sprintf(`protocol="%s"`, e.messageEncryption.protocolString)) {
+		return e.messageEncryption.decryptResponse(response)
 	}
-	return body, nil
-}
-
-func (e *Encryption) encryptMessage(message []byte, host string) []byte {
-	encryptedStream, _ := e.buildMessage(message, host)
-
-	messagePayload := bytes.Join([][]byte{
-		[]byte(mimeBoundary),
-		[]byte("\r\n"),
-		[]byte(fmt.Sprintf("\tContent-Type: %s\r\n", string(e.protocolString))),
-		[]byte(fmt.Sprintf("\tOriginalContent: type=application/soap+xml;charset=UTF-8;Length=%d\r\n", len(message))),
-		[]byte(mimeBoundary),
-		[]byte("\r\n"),
-		[]byte("\tContent-Type: application/octet-stream\r\n"),
-		encryptedStream,
-	}, []byte{})
-
-	return messagePayload
-}
-
-func deleteEmpty(b [][]byte) [][]byte {
-	var r [][]byte
-	for _, by := range b {
-		if len(by) != 0 {
-			r = append(r, by)
-		}
+	if response.Body == nil {
+		return nil, fmt.Errorf("NTLM response body is nil")
 	}
-	return r
+	defer response.Body.Close()
+	return io.ReadAll(response.Body)
 }
 
-// tried using pkg.go.dev/mime/multipart here but parsing fails with with
-// because in the header we have "\tContent-Type: application/HTTP-SPNEGO-session-encrypted\r\n"
-// on call to textproto.ReadMIMEHeader
-// because of "The first line cannot start with a leading space."
-func (e *Encryption) decryptResponse(response *http.Response, host string) ([]byte, error) {
-	body, _ := io.ReadAll(response.Body)
-	parts := deleteEmpty(bytes.Split(body, []byte(fmt.Sprintf("%s\r\n", mimeBoundary))))
-	var message []byte
-
-	for i := 0; i < len(parts); i += 2 {
-		header := parts[i]
-		payload := parts[i+1]
-
-		expectedLengthStr := bytes.SplitAfter(header, []byte("Length="))[1]
-		expectedLength, err := strconv.Atoi(string(bytes.TrimSpace(expectedLengthStr)))
-		if err != nil {
-			return nil, err
-		}
-
-		// remove the end MIME block if it exists
-		if bytes.HasSuffix(payload, []byte(fmt.Sprintf("%s--\r\n", mimeBoundary))) {
-			payload = payload[:len(payload)-boundaryLength-4]
-		}
-		encryptedData := bytes.ReplaceAll(payload, []byte("\tContent-Type: application/octet-stream\r\n"), []byte{})
-		decryptedMessage, err := e.decryptMessage(encryptedData, host)
-		if err != nil {
-			return nil, err
-		}
-
-		actualLength := int(len(decryptedMessage))
-		if actualLength != expectedLength {
-			return nil, errors.New("encrypted length from server does not match the expected size, message has been tampered with")
-		}
-
-		message = append(message, decryptedMessage...)
+// splitUsername splits a "user@domain" or "domain\user" credential into its
+// user and domain parts. Used by credssp.go's performCredSSPAuth.
+func splitUsername(input string) (string, string) {
+	if strings.Contains(input, "@") {
+		parts := strings.SplitN(input, "@", 2)
+		return parts[0], parts[1]
 	}
-
-	return message, nil
-}
-
-func (e *Encryption) decryptMessage(encryptedData []byte, host string) ([]byte, error) {
-	switch e.protocol {
-	case "ntlm":
-		return e.decryptNtlmMessage(encryptedData, host)
-		/* credssp and kerberos is currently unimplemented, leave holder for future to keep in sync with python implementation
-		case "credssp":
-			return e.decryptCredsspMessage(encryptedData, host)
-		case "kerberos":
-			return e.decryptKerberosMessage(encryptedData, host)
-		*/
-	default:
-		return nil, errors.New("Encryption for protocol " + e.protocol + " not supported")
+	if strings.Contains(input, "\\") {
+		parts := strings.SplitN(input, "\\", 2)
+		return parts[1], parts[0]
 	}
+	return input, ""
 }
-
-func (e *Encryption) decryptNtlmMessage(encryptedData []byte, host string) ([]byte, error) {
-	signatureLength := int(binary.LittleEndian.Uint32(encryptedData[:4]))
-	signature := encryptedData[4 : signatureLength+4]
-	encryptedMessage := encryptedData[signatureLength+4:]
-
-	message, err := e.ntlmClient.SecuritySession().Unwrap(encryptedMessage, signature)
-	if err != nil {
-		return nil, err
-	}
-	return message, nil
-}
-
-/* credssp and kerberos is currently unimplemented, leave holder for future to keep in sync with python implementation
-func (e *Encryption) decryptCredsspMessage(encryptedData []byte, host string) ([]byte, error) {
-	// // TODO
-	// encryptedMessage := encryptedData[4:]
-
-	// credsspContext, ok := e.session.Auth.Contexts()[host]
-	// if !ok {
-	// 	return nil, fmt.Errorf("credssp context not found for host: %s", host)
-	// }
-
-	// message, err := credsspContext.Unwrap(encryptedMessage)
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// return message, nil
-}
-
-func (enc *Encryption) decryptKerberosMessage(encryptedData []byte, host string) ([]byte, error) {
-	// //TODO
-	// signatureLength := binary.LittleEndian.Uint32(encryptedData[0:4])
-	// signature := encryptedData[4 : 4+signatureLength]
-	// encryptedMessage := encryptedData[4+signatureLength:]
-
-	// message, err := enc.session.Auth.UnwrapWinrm(host, encryptedMessage, signature)
-	// if err != nil {
-	// 	return nil, err
-	// }
-
-	// return message, nil
-}
-*/
-
-func (e *Encryption) buildMessage(encryptedData []byte, host string) ([]byte, error) {
-	switch e.protocol {
-	case "ntlm":
-		return e.buildNTLMMessage(encryptedData, host)
-		/* credssp and kerberos is currently unimplemented, leave holder for future to keep in sync with python implementation
-		case "credssp":
-			return e.buildCredSSPMessage(encryptedData, host)
-		case "kerberos":
-			return e.buildKerberosMessage(encryptedData, host)
-		*/
-	default:
-		return nil, errors.New("Encryption for protocol " + e.protocol + " not supported")
-	}
-}
-
-func (enc *Encryption) buildNTLMMessage(message []byte, host string) ([]byte, error) {
-	if enc.ntlmClient.SecuritySession() == nil {
-		return nil, nil
-	}
-	sealedMessage, signature, err := enc.ntlmClient.SecuritySession().Wrap(message)
-	if err != nil {
-		return nil, err
-	}
-
-	buf := new(bytes.Buffer)
-	if err = binary.Write(buf, binary.LittleEndian, uint32(len(signature))); err != nil {
-		return nil, err
-	}
-
-	buf.Write(signature)
-	buf.Write(sealedMessage)
-
-	return buf.Bytes(), nil
-}
-
-/* credssp and kerberos is currently unimplemented, leave holder for future to keep in sync with python implementation
-func (e *Encryption) buildCredSSPMessage(message []byte, host string) ([]byte, error) {
-	// //TODO
-	// context := e.session.Auth.Contexts[host]
-	// sealedMessage := context.Wrap(message)
-
-	// cipherNegotiated := context.TLSConnection.ConnectionState().CipherSuite.Name
-	// trailerLength := e.getCredSSPTrailerLength(len(message), cipherNegotiated)
-
-	// trailer := make([]byte, 4)
-	// binary.LittleEndian.PutUint32(trailer, uint32(trailerLength))
-
-	// return append(trailer, sealedMessage...), nil
-}
-
-func (e *Encryption) buildKerberosMessage(message []byte, host string) ([]byte, error) {
-	// //TODO
-	// sealedMessage, signature := e.session.Auth.WrapWinrm(host, message)
-
-	// signatureLength := make([]byte, 4)
-	// binary.LittleEndian.PutUint32(signatureLength, uint32(len(signature)))
-
-	// return append(append(signatureLength, signature...), sealedMessage...), nil
-}
-
-func (e *Encryption) getCredSSPTrailerLength(messageLength int, cipherSuite string) int {
-	var trailerLength int
-
-	if match, _ := regexp.MatchString("^.*-GCM-[\\w\\d]*$", cipherSuite); match {
-		trailerLength = 16
-	} else {
-		hashAlgorithm := cipherSuite[strings.LastIndex(cipherSuite, "-")+1:]
-		var hashLength int
-
-		if hashAlgorithm == "MD5" {
-			hashLength = 16
-		} else if hashAlgorithm == "SHA" {
-			hashLength = 20
-		} else if hashAlgorithm == "SHA256" {
-			hashLength = 32
-		} else if hashAlgorithm == "SHA384" {
-			hashLength = 48
-		} else {
-			hashLength = 0
-		}
-
-		prePadLength := messageLength + hashLength
-		paddingLength := 0
-
-		if strings.Contains(cipherSuite, "RC4") {
-			paddingLength = 0
-		} else if strings.Contains(cipherSuite, "DES") || strings.Contains(cipherSuite, "3DES") {
-			paddingLength = 8 - (prePadLength % 8)
-
-		} else {
-			// AES is a 128 bit block cipher
-			paddingLength = 16 - (prePadLength % 16)
-		}
-
-		trailerLength = (prePadLength + paddingLength) - messageLength
-	}
-	return trailerLength
-}
-*/

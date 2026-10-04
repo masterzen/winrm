@@ -1,28 +1,32 @@
-name: Lint (golangci-lint)
+name: golangci-lint
 on:
+  push:
+    branches:
+      - main
+      - master
   pull_request:
-    paths:
-      - '**.go'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  golangci-lint:
-    name: Run golangci-lint
+  golangci:
+    name: lint
     runs-on: ubuntu-latest
     steps:
-      - name: Check out code into the Go module directory
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
-          check-latest: true
-
-      - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v3
+          go-version: stable
+      - name: Read golangci-lint version
+        id: golangci-lint-version
+        run: echo "version=$(cat .golangci-lint-version)" >> "$GITHUB_OUTPUT"
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
-          version: latest
-          skip-cache: true
-          only-new-issues: false
-          args: --verbose --timeout=10m
+          version: ${{ steps.golangci-lint-version.outputs.version }}
 

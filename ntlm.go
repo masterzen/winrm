@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/Azure/go-ntlmssp"
 	"github.com/masterzen/winrm/soap"
 )
 
@@ -19,7 +18,17 @@ func (c *ClientNTLM) Transport(endpoint *Endpoint) error {
 	if err := c.clientRequest.Transport(endpoint); err != nil {
 		return err
 	}
-	c.clientRequest.transport = &ntlmssp.Negotiator{RoundTripper: c.clientRequest.transport}
+
+	// NTLM authentication uses one TCP connection. A second connection
+	// breaks the handshake.
+	if t, ok := c.transport.(*http.Transport); ok {
+		t.DisableKeepAlives = false
+		t.MaxConnsPerHost = 1
+		t.MaxIdleConnsPerHost = 1
+		t.IdleConnTimeout = 0
+	}
+
+	c.transport = newNTLMSealingTransport(c.transport)
 	return nil
 }
 
@@ -28,7 +37,7 @@ func (c ClientNTLM) Post(client *Client, request *soap.SoapMessage) (string, err
 	return c.clientRequest.Post(client, request)
 }
 
-//NewClientNTLMWithDial NewClientNTLMWithDial
+// NewClientNTLMWithDial NewClientNTLMWithDial
 func NewClientNTLMWithDial(dial func(network, addr string) (net.Conn, error)) *ClientNTLM {
 	return &ClientNTLM{
 		clientRequest{
@@ -37,7 +46,7 @@ func NewClientNTLMWithDial(dial func(network, addr string) (net.Conn, error)) *C
 	}
 }
 
-//NewClientNTLMWithProxyFunc NewClientNTLMWithProxyFunc
+// NewClientNTLMWithProxyFunc NewClientNTLMWithProxyFunc
 func NewClientNTLMWithProxyFunc(proxyfunc func(req *http.Request) (*url.URL, error)) *ClientNTLM {
 	return &ClientNTLM{
 		clientRequest{

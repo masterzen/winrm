@@ -1,6 +1,7 @@
 package winrm
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"io"
@@ -42,11 +43,13 @@ func (c *ClientAuthRequest) Transport(endpoint *Endpoint) error {
 			InsecureSkipVerify: endpoint.Insecure,
 			Certificates:       []tls.Certificate{cert},
 		},
-		Dial:                  dial,
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return dial(network, addr)
+		},
 		ResponseHeaderTimeout: endpoint.Timeout,
 	}
 
-	if endpoint.CACert != nil && len(endpoint.CACert) > 0 {
+	if len(endpoint.CACert) > 0 {
 		certPool, err := readCACerts(endpoint.CACert)
 		if err != nil {
 			return err
@@ -86,7 +89,7 @@ func parse(response *http.Response) (string, error) {
 func (c ClientAuthRequest) Post(client *Client, request *soap.SoapMessage) (string, error) {
 	httpClient := &http.Client{Transport: c.transport}
 
-	req, err := http.NewRequest("POST", client.url, strings.NewReader(request.String()))
+	req, err := http.NewRequestWithContext(context.Background(), "POST", client.url, strings.NewReader(request.String()))
 	if err != nil {
 		return "", fmt.Errorf("impossible to create http request %w", err)
 	}

@@ -19,11 +19,11 @@ func (s *WinRMSuite) TestOpenShellResponse(c *C) {
 
 func (s *WinRMSuite) TestOpenShellResponseError(c *C) {
 	response := createShellResponseWithError
-	shellId, err := ParseOpenShellResponse(response)
+	shellID, err := ParseOpenShellResponse(response)
 	if err == nil {
 		c.Fatal("expected error")
 	}
-	c.Assert(shellId, Equals, "")
+	c.Assert(shellID, Equals, "")
 
 	var execCmdRespErr *ExecuteCommandError
 	if !errors.As(err, &execCmdRespErr) {
