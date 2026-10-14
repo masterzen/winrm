@@ -98,7 +98,7 @@ func ParseOpenShellResponse(response string) (string, error) {
 	return parseResponse(
 		response,
 		"http://schemas.xmlsoap.org/ws/2004/09/transfer/CreateResponse",
-		"//rsp:ShellId",
+		"//rsp:ShellId | //w:Selector[@Name='ShellId']",
 	)
 }
 
