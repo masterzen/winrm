@@ -3,7 +3,7 @@ module github.com/masterzen/winrm
 go 1.24
 
 require (
-	github.com/Azure/go-ntlmssp v0.1.2-0.20260824092057-1c8077778c2c
+	github.com/Azure/go-ntlmssp v0.1.2-0.20261111092545-5846b35b583b
 	github.com/ChrisTrenkamp/goxpath v0.0.0-20210404020558-97928f7e12b6
 	github.com/gofrs/uuid v4.4.0+incompatible
 	github.com/google/go-cmp v0.6.0 // indirect

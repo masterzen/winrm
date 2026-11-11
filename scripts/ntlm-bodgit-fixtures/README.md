@@ -22,8 +22,7 @@ by the same `generate.sh` run:
   `CHALLENGE_MESSAGE` and pinned `ClientChallenge`, together with the
   `NtChallengeResponse` bodgit's own `Client.Authenticate` derives from
   them. `ntlm_mic_interop_test.go` checks that
-  `ntlmPatchChallengeForMIC` (`ntlm_mic.go`), fed into
-  `ntlmssp.NewAuthenticateMessage`, derives the identical
+  `ntlmssp.NewAuthenticateMessage`, with a MIC requested, derives the identical
   `NtChallengeResponse`. See
   `ntlm_security_session_interop_fixtures_test.go`'s package doc comment
   for what this mode compares (only `NtChallengeResponse`) and why it
