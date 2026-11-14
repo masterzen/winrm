@@ -21,28 +21,28 @@ const (
 	ntlmMicFixturePassword = "mic-fixture-pass"
 )
 
-// TestNtlmMicBodgitInteropFixtures checks that ntlmPatchChallengeForMIC, fed
-// into ntlmssp.NewAuthenticateMessage, derives the same NtChallengeResponse
+// TestNtlmMicBodgitInteropFixtures checks that ntlmssp.NewAuthenticateMessage,
+// with a MIC requested (NegotiateMessage set), derives the same NtChallengeResponse
 // the real bodgit/ntlmssp source derives from the identical CHALLENGE and
 // ClientChallenge. See ntlm_mic_interop_fixtures_test.go's package doc
 // comment for what this does and does not prove, and why only
 // NtChallengeResponse is compared.
 func (s *WinRMSuite) TestNtlmMicBodgitInteropFixtures(c *C) {
-	for _, fixture := range ntlmMicBodgitInteropFixtures {
-		patchedChallenge, micRequired, err := ntlmPatchChallengeForMIC(fixture.challengeToken)
-		c.Assert(err, IsNil, Commentf("fixture %q: ntlmPatchChallengeForMIC", fixture.name))
-		c.Assert(micRequired, Equals, true, Commentf("fixture %q: expected MIC to be required", fixture.name))
+	negotiateToken, err := ntlmssp.NewNegotiateMessageWithOptions(ntlmssp.NegotiateMessageOptions{RequestSealing: true})
+	c.Assert(err, IsNil)
 
+	for _, fixture := range ntlmMicBodgitInteropFixtures {
 		origReader := rand.Reader
 		rand.Reader = bytes.NewReader(fixture.clientChallenge)
 		var exportedSessionKey []byte
-		authenticateToken, err := ntlmssp.NewAuthenticateMessage(patchedChallenge, ntlmMicFixtureUsername, ntlmMicFixturePassword, &ntlmssp.AuthenticateMessageOptions{
+		authenticateToken, err := ntlmssp.NewAuthenticateMessage(fixture.challengeToken, ntlmMicFixtureUsername, ntlmMicFixturePassword, &ntlmssp.AuthenticateMessageOptions{
 			ExportedSessionKey: &exportedSessionKey,
+			NegotiateMessage:   negotiateToken,
 		})
 		rand.Reader = origReader
 		c.Assert(err, IsNil, Commentf("fixture %q: NewAuthenticateMessage", fixture.name))
 
-		ntPos := ntlmVarFieldOffsetPositions[1] // NtChallengeResponse
+		ntPos := ntlmMicVarFieldPositions[1] // NtChallengeResponse
 		c.Assert(len(authenticateToken) >= ntPos.offsetPos+4, Equals, true, Commentf("fixture %q: authenticate token too short", fixture.name))
 
 		length := int(binary.LittleEndian.Uint16(authenticateToken[ntPos.lenPos : ntPos.lenPos+2]))

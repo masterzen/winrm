@@ -4,9 +4,8 @@
 // compatibility between this package and bodgit/ntlmssp, the library this
 // codebase used before migrating to Azure/go-ntlmssp: NTLM sealing
 // (`ntlm_security_session.go`, `ntlm_sealing.go`) and NTLMv2
-// challenge-response computation (`ntlmPatchChallengeForMIC` in
-// `ntlm_mic.go`, fed into Azure/go-ntlmssp's
-// `ntlmssp.NewAuthenticateMessage`).
+// challenge-response computation (Azure/go-ntlmssp's
+// `ntlmssp.NewAuthenticateMessage` with a MIC requested).
 //
 // Provenance: every fixture below is produced by the real, unmodified
 // github.com/bodgit/ntlmssp source (pinned at
@@ -70,19 +69,15 @@
 //
 //   - MIC bytes never match between the two libraries, even from identical
 //     inputs. bodgit's authenticateMessage.Marshal (authenticate_message.go)
-//     unconditionally writes an 8-byte zero-value Version block before the
-//     MIC field, even though NTLMSSP_NEGOTIATE_VERSION is never negotiated
-//     here, and it orders payload fields differently (Domain, User,
+//     writes its Version block differently from Azure/go-ntlmssp, and it
+//     orders payload fields differently (Domain, User,
 //     Workstation, Lm, Nt, SessionKey) than Azure/go-ntlmssp does (Lm, Nt,
 //     Domain, User, Workstation, SessionKey). MIC is
 //     HMAC_MD5(key, full serialized AUTHENTICATE_MESSAGE bytes), so these
 //     different serializations can never produce equal HMAC outputs,
-//     independent of whether this package's own MIC logic is correct. This
-//     is not an interop bug to fix: this codebase never negotiates
-//     NTLMSSP_NEGOTIATE_VERSION, so there is no Version block to add or
-//     field order to change. MIC's own correctness already has its own
-//     check, independent of bodgit, in ntlm_mic_test.go's hand-computed
-//     HMAC-MD5 vector.
+//     independent of whether either MIC is correct. MIC correctness has
+//     its own check, independent of bodgit, in ntlm_mic_test.go's
+//     hand-computed HMAC-MD5.
 //   - ExportedSessionKey is not worth extracting from bodgit. bodgit's
 //     Client.Authenticate never exposes it: only the marshaled AUTHENTICATE
 //     bytes come back, and authenticateMessage.Unmarshal never reconstructs
@@ -204,8 +199,7 @@ type ntlmMicBodgitInteropFixture struct {
 // ntlmMicBodgitInteropFixtures holds 2 fixtures, both with a fixed 8-byte
 // ServerChallenge and a fixed 8-byte MsvAvTimestamp AV-pair in TargetInfo,
 // differing only in whether TargetInfo already carries an MsvAvFlags
-// AV-pair before ntlmPatchChallengeForMIC/bodgit's own equivalent logic
-// patches it: "flags-absent" exercises the splice-a-new-pair branch,
+// AV-pair before go-ntlmssp/bodgit sets the MIC-present bit in it: "flags-absent" exercises the splice-a-new-pair branch,
 // "flags-present" exercises the OR-the-bit-in-place branch. The two
 // fixtures use different ServerChallenge/ClientChallenge/timestamp values;
 // that difference is not load-bearing, it just avoids reusing the exact

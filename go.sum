@@ -1,5 +1,5 @@
-github.com/Azure/go-ntlmssp v0.1.2-0.20260824092057-1c8077778c2c h1:HyK5+m8TFO4iAmMJ7u8tyUjE9C/y4/mvFRT0nqEPfJY=
-github.com/Azure/go-ntlmssp v0.1.2-0.20260824092057-1c8077778c2c/go.mod h1:NYqdhxd/8aAct/s4qSYZEerdPuH1liG2/X9DiVTbhpk=
+github.com/Azure/go-ntlmssp v0.1.2-0.20261111092545-5846b35b583b h1:bjbfDOR1AKL94pAT8/sD6RFm+MtcWskNqt8ELP33c+w=
+github.com/Azure/go-ntlmssp v0.1.2-0.20261111092545-5846b35b583b/go.mod h1:NYqdhxd/8aAct/s4qSYZEerdPuH1liG2/X9DiVTbhpk=
 github.com/ChrisTrenkamp/goxpath v0.0.0-20210404020558-97928f7e12b6 h1:w0E0fgc1YafGEh5cROhlROMWXiNoZqApk2PDN0M1+Ns=
 github.com/ChrisTrenkamp/goxpath v0.0.0-20210404020558-97928f7e12b6/go.mod h1:nuWgzSkT5PnyOd+272uUmV0dnAnAn42Mk7PiQC5VzN4=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
