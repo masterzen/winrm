@@ -1,6 +1,6 @@
 module github.com/masterzen/winrm
 
-go 1.24
+go 1.24.0
 
 require (
 	github.com/Azure/go-ntlmssp v0.1.2-0.20261111092545-5846b35b583b
@@ -10,13 +10,13 @@ require (
 	github.com/jcmturner/gokrb5/v8 v8.4.4
 	github.com/kr/pretty v0.1.0 // indirect
 	github.com/masterzen/simplexml v0.0.0-20190410153822-31eea3082786
-	golang.org/x/text v0.16.0
+	golang.org/x/text v0.34.0
 	gopkg.in/check.v1 v1.0.0-20180628173108-788fd7840127
 )
 
 require (
 	github.com/jcmturner/gofork v1.7.6
-	golang.org/x/crypto v0.24.0
+	golang.org/x/crypto v0.48.0
 )
 
 require (
@@ -27,5 +27,5 @@ require (
 	github.com/jcmturner/rpc/v2 v2.0.3 // indirect
 	github.com/kr/text v0.1.0 // indirect
 	github.com/stretchr/testify v1.9.0 // indirect
-	golang.org/x/net v0.21.0 // indirect
+	golang.org/x/net v0.50.0 // indirect
 )
