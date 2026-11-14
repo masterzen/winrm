@@ -8,3 +8,12 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
+    # We stay on Go 1.24 (the floor go-ntlmssp requires), so skip releases
+    # whose go.mod raises the Go version. Lift these when the floor moves.
+    ignore:
+      - dependency-name: "golang.org/x/crypto"
+        versions: [">=0.49.0"]
+      - dependency-name: "golang.org/x/net"
+        versions: [">=0.51.0"]
+      - dependency-name: "golang.org/x/text"
+        versions: [">=0.35.0"]
