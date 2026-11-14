@@ -45,20 +45,6 @@ var ntlmMicVarFieldPositions = []struct{ lenPos, offsetPos int }{
 	{52, 56}, // SessionKey
 }
 
-// ntlmChallengeTargetInfo reads the TargetInfo varField from a
-// CHALLENGE_MESSAGE (MS-NLMP §2.2.1.2).
-func ntlmChallengeTargetInfo(challengeToken []byte) (offset, length int, err error) {
-	if len(challengeToken) < 48 {
-		return 0, 0, fmt.Errorf("challenge token too short to contain TargetInfo: %d bytes", len(challengeToken))
-	}
-	length = int(binary.LittleEndian.Uint16(challengeToken[40:42]))
-	offset = int(binary.LittleEndian.Uint32(challengeToken[44:48]))
-	if offset+length > len(challengeToken) {
-		return 0, 0, fmt.Errorf("TargetInfo field (offset %d, length %d) extends beyond challenge token of %d bytes", offset, length, len(challengeToken))
-	}
-	return offset, length, nil
-}
-
 // ntlmWalkAVPairs calls visit for each AV_PAIR in targetInfo (MS-NLMP
 // §2.2.2.1), up to and including MsvAvEOL, or until visit returns true.
 func ntlmWalkAVPairs(targetInfo []byte, visit func(avID uint16, value []byte, valueOffsetInBlob int) (stop bool)) error {
