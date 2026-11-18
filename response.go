@@ -110,6 +110,20 @@ func ParseExecuteCommandResponse(response string) (string, error) {
 	)
 }
 
+func writeResponseStreams(nodes tree.NodeSet, stream io.Writer) error {
+	for _, node := range nodes {
+		content, _ := base64.StdEncoding.DecodeString(node.ResValue())
+		n, err := stream.Write(content)
+		if err != nil {
+			return err
+		}
+		if n < len(content) {
+			return io.ErrShortWrite
+		}
+	}
+	return nil
+}
+
 // ParseSlurpOutputErrResponse ParseSlurpOutputErrResponse
 func ParseSlurpOutputErrResponse(response string, stdout, stderr io.Writer) (bool, int, error) {
 	var (
@@ -127,14 +141,12 @@ func ParseSlurpOutputErrResponse(response string, stdout, stderr io.Writer) (boo
 	}
 
 	stdouts, _ := xPath(doc, "//rsp:Stream[@Name='stdout']")
-	for _, node := range stdouts {
-		content, _ := base64.StdEncoding.DecodeString(node.ResValue())
-		stdout.Write(content)
+	if err := writeResponseStreams(stdouts, stdout); err != nil {
+		return false, 0, err
 	}
 	stderrs, _ := xPath(doc, "//rsp:Stream[@Name='stderr']")
-	for _, node := range stderrs {
-		content, _ := base64.StdEncoding.DecodeString(node.ResValue())
-		stderr.Write(content)
+	if err := writeResponseStreams(stderrs, stderr); err != nil {
+		return false, 0, err
 	}
 
 	ended, _ := any(doc, "//*[@State='http://schemas.microsoft.com/wbem/wsman/1/windows/shell/CommandState/Done']")
@@ -169,9 +181,8 @@ func ParseSlurpOutputResponse(response string, stream io.Writer, streamType stri
 	}
 
 	nodes, _ := xPath(doc, fmt.Sprintf("//rsp:Stream[@Name='%s']", streamType))
-	for _, node := range nodes {
-		content, _ := base64.StdEncoding.DecodeString(node.ResValue())
-		_, _ = stream.Write(content)
+	if err := writeResponseStreams(nodes, stream); err != nil {
+		return false, 0, err
 	}
 
 	ended, _ := any(doc, "//*[@State='http://schemas.microsoft.com/wbem/wsman/1/windows/shell/CommandState/Done']")
