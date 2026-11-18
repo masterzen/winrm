@@ -41,6 +41,7 @@ func (c *ClientAuthRequest) Transport(endpoint *Endpoint) error {
 		TLSClientConfig: &tls.Config{
 			Renegotiation:      tls.RenegotiateOnceAsClient,
 			InsecureSkipVerify: endpoint.Insecure,
+			ServerName:         endpoint.TLSServerName,
 			Certificates:       []tls.Certificate{cert},
 		},
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
