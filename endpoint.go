@@ -1,6 +1,7 @@
 package winrm
 
 import (
+	"crypto/tls"
 	"net"
 	"net/url"
 	"strconv"
@@ -29,6 +30,25 @@ type Endpoint struct {
 	// duration timeout for the underling tcp conn(http/https base protocol)
 	// if the time exceeds the connection is cloded/timeouts
 	Timeout time.Duration
+	// TLSConfig, if set, is cloned as the base TLS client config of the HTTPS
+	// connection. Insecure always overrides it, and TLSServerName, CACert,
+	// Cert and Key override it when set. It does not apply to the TLS session
+	// CredSSP tunnels inside HTTP messages.
+	TLSConfig *tls.Config
+}
+
+// tlsClientConfig returns a clone of TLSConfig with Insecure and
+// TLSServerName applied.
+func (ep *Endpoint) tlsClientConfig() *tls.Config {
+	cfg := &tls.Config{}
+	if ep.TLSConfig != nil {
+		cfg = ep.TLSConfig.Clone()
+	}
+	cfg.InsecureSkipVerify = ep.Insecure
+	if ep.TLSServerName != "" {
+		cfg.ServerName = ep.TLSServerName
+	}
+	return cfg
 }
 
 func (ep *Endpoint) url() string {

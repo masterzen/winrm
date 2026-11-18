@@ -18,21 +18,29 @@ import (
 )
 
 // helloRecorder is a TLS test server that records the ClientHello of every
-// handshake and answers each request with the CreateShell response fixture.
+// handshake and the client certificate of every request, and answers each
+// request with the CreateShell response fixture.
 type helloRecorder struct {
-	server *httptest.Server
-	mu     sync.Mutex
-	hellos []*tls.ClientHelloInfo
+	server      *httptest.Server
+	mu          sync.Mutex
+	hellos      []*tls.ClientHelloInfo
+	clientCerts []*x509.Certificate
 }
 
 func newHelloRecorder(t *testing.T) *helloRecorder {
 	t.Helper()
 	r := &helloRecorder{}
-	r.server = httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	r.server = httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if len(req.TLS.PeerCertificates) > 0 {
+			r.mu.Lock()
+			r.clientCerts = append(r.clientCerts, req.TLS.PeerCertificates[0])
+			r.mu.Unlock()
+		}
 		w.Header().Set("Content-Type", "application/soap+xml")
 		_, _ = w.Write([]byte(response))
 	}))
 	r.server.TLS = &tls.Config{
+		ClientAuth: tls.RequestClientCert,
 		GetConfigForClient: func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
 			r.mu.Lock()
 			defer r.mu.Unlock()
@@ -63,6 +71,12 @@ func (r *helloRecorder) recordedHellos(t *testing.T) []*tls.ClientHelloInfo {
 		t.Fatal("server received no ClientHello")
 	}
 	return slices.Clone(r.hellos)
+}
+
+func (r *helloRecorder) recordedClientCerts() []*x509.Certificate {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.clientCerts)
 }
 
 // newTestClientCert returns a self-signed client certificate and its key in
