@@ -2,7 +2,6 @@ package winrm
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"io"
 	"net"
@@ -59,13 +58,9 @@ func (c *clientRequest) Transport(endpoint *Endpoint) error {
 		proxyfunc = c.proxyfunc
 	}
 
-	//nolint:gosec
 	transport := &http.Transport{
-		Proxy: proxyfunc,
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: endpoint.Insecure,
-			ServerName:         endpoint.TLSServerName,
-		},
+		Proxy:           proxyfunc,
+		TLSClientConfig: endpoint.tlsClientConfig(),
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			return dial(network, addr)
 		},

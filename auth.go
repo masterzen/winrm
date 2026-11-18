@@ -35,14 +35,15 @@ func (c *ClientAuthRequest) Transport(endpoint *Endpoint) error {
 		dial = c.dial
 	}
 
-	//nolint:gosec
+	tlsConfig := endpoint.tlsClientConfig()
+	tlsConfig.Renegotiation = tls.RenegotiateOnceAsClient
+	tlsConfig.Certificates = []tls.Certificate{cert}
+	// crypto/tls prefers GetClientCertificate over Certificates.
+	tlsConfig.GetClientCertificate = nil
+
 	transport := &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
-		TLSClientConfig: &tls.Config{
-			Renegotiation:      tls.RenegotiateOnceAsClient,
-			InsecureSkipVerify: endpoint.Insecure,
-			Certificates:       []tls.Certificate{cert},
-		},
+		Proxy:           http.ProxyFromEnvironment,
+		TLSClientConfig: tlsConfig,
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			return dial(network, addr)
 		},
